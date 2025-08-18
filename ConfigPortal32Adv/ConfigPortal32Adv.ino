@@ -1,6 +1,6 @@
 #include <Arduino.h>
 #include <ESPmDNS.h>
-#include "ConfigPortal32.h"
+#include "ConfigPortal32Adv.h"
 #include <LittleFS.h>
 
 char* ssid_pfix = (char*)"CaptivePortal";
