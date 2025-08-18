@@ -17,6 +17,7 @@
  *  15.8.2025.
  *  - Added styles for input field labels and placeholders
  *  - Added the InputField and InputGroup structs to help group settings into WiFi and Other
+ *  - Removed user_config_html. Use the InputField instead to add new fields to the Web form. 
  *  - Added pre-loading existing settings into the Config page
  *  - The sketch uses almost 1Mb of flash, you might want to increase the firmware partition size in ESP32
  */
@@ -38,7 +39,6 @@ const int RESET_PIN = 0;
 
 char cfgFile[] = "/config.json";
 
-extern String user_config_html;
 extern char* ssid_pfix;
 
 String html_begin = ""
@@ -235,7 +235,7 @@ bool getHTML(String* html, char* fname) {
  * @param fieldValue   Default value of the input field (optional).
  * @param checked      Whether the input should be marked as checked (for checkbox/radio).
  */
-void appendInputStream(const char* type, const char* fieldName, const char* placeholder, const char* fieldValue, bool checked = false) {
+void appendInputField(const char* type, const char* fieldName, const char* placeholder, const char* fieldValue, bool checked = false) {
   bool isTextual = strcmp(type, "checkbox") != 0 && strcmp(type, "radio") != 0;
   bool isCheckbox = strcmp(type, "checkbox");
 
@@ -295,32 +295,6 @@ void appendInputStream(const char* type, const char* fieldName, const char* plac
 
 
 
-void appendInputStreamObsolete(const char* type, const char* fieldName, const char* placeholder, const char* fieldValue, bool checked = false) {
-  webServer.sendContent("<p><input type='");
-  webServer.sendContent(type);
-  webServer.sendContent("' name='");
-  webServer.sendContent(fieldName);
-  webServer.sendContent("'");
-
-  if (placeholder && strlen(placeholder) > 0) {
-    webServer.sendContent(" placeholder='");
-    webServer.sendContent(placeholder);
-    webServer.sendContent("'");
-  }
-
-  if (fieldValue && strlen(fieldValue) > 0) {
-    webServer.sendContent(" value='");
-    webServer.sendContent(fieldValue);
-    webServer.sendContent("'");
-  }
-
-  if (checked) {
-    webServer.sendContent(" checked");
-  }
-
-  webServer.sendContent(">");
-}
-
 void beginGroup(const char* label = nullptr) {
   webServer.sendContent("<fieldset style='margin-top:1em; padding:0.5em; border:1px solid #ccc;'>");
 
@@ -352,15 +326,15 @@ void sendConfigPage() {
   }
 
   beginGroup("WiFi config");
-  appendInputStream("text", "ssid", "SSID", cfgOK ? (const char*)cfg["ssid"] : "wifissid", false);
-  appendInputStream("text", "w_pw", "Password", cfgOK ? (const char*)cfg["w_pw"] : "wifipwd", false);
+  appendInputField("text", "ssid", "SSID", cfgOK ? (const char*)cfg["ssid"] : "wifissid", false);
+  appendInputField("text", "w_pw", "Password", cfgOK ? (const char*)cfg["w_pw"] : "wifipwd", false);
   endGroup();
 
   if (userInputs.fields && userInputs.count > 0) {
     beginGroup("Extra Settings");
     for (size_t i = 0; i < userInputs.count; ++i) {
       InputField& f = userInputs.fields[i];
-      appendInputStream(f.type, f.name, f.placeholder, cfgOK ? (const char*)cfg[f.name] : f.value, f.checked);
+      appendInputField(f.type, f.name, f.placeholder, cfgOK ? (const char*)cfg[f.name] : f.value, f.checked);
     }
     endGroup();
   }
@@ -396,7 +370,6 @@ void configDevice() {
 
   webServer.onNotFound([]() {
     sendConfigPage();
-    //webServer.send(200, "text/html", html_begin + user_config_html + html_end);
   });
 
   webServer.begin();

@@ -10,12 +10,13 @@ The original library was incorporated into this project on August 15, 2025.
 
 ### Changes
 
-**15.08.2025**
+**18.08.2025**
 
 1. Added styles for input field labels and placeholders
 2. Introduced InputField and InputGroup structs to divide parameters into WiFi and Other categories
 3. Enabled pre-loading of existing settings into the configuration page
-4. The sketch uses nearly 1 MB of flash; consider increasing the firmware partition size on the ESP32
+4. Removed user\_config\_html. Use the InputField instead to add new fields to the Web form.
+5. The sketch uses nearly 1 MB of flash; consider increasing the firmware partition size on the ESP32
 
 ---
 
@@ -46,7 +47,7 @@ The portal displays the current configuration in a simple web form. Users can mo
 
 ##### Example of usage
 
-The accompanying .ino file demonstrates how to use the library. In its current form, the portal is always displayed — meaning the firmware never proceeds beyond the configuration stage. 
+The accompanying .ino file demonstrates how to use the library. In its current form, the portal is always displayed — meaning the firmware never proceeds beyond the configuration stage.
 
 
 
