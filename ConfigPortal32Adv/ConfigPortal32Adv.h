@@ -382,6 +382,6 @@ void configDevice() {
       (*userConfigLoop)();
     }
 
-    //vTaskDelay(pdMS_TO_TICKS(10));  // RTOS-friendly delay
+    vTaskDelay(pdMS_TO_TICKS(10));  // RTOS-friendly delay
   }
 }
