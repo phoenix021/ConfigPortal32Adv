@@ -1,7 +1,11 @@
+#include <LittleFS.h>
+
 #include <Arduino.h>
 #include <ESPmDNS.h>
 #include "ConfigPortal32Adv.h"
 #include <LittleFS.h>
+#include <Wire.h>
+
 
 char* ssid_pfix = (char*)"CaptivePortal";
 String user_config_html = "";
@@ -37,7 +41,6 @@ InputGroup userInputs = {
   myInputs,
   sizeof(myInputs) / sizeof(myInputs[0])
 };
-
 
 
 /*
@@ -79,11 +82,20 @@ void testLittleFS() {
 void setup() {
   Serial.begin(115200);
 
+  u8g2.begin();
+
+  u8g2_prepare();
+
+  //u8g2.clearBuffer();          // clear the internal memory
+  //u8g2.setFont(u8g2_font_ncenB08_tr); // choose a suitable font
+  u8g2.drawStr(0,10,"Hello World!");  // write something to the internal memory
+  u8g2.sendBuffer();  
+
   testLittleFS();
 
   loadConfig();
   // TODO: the configDevice() call needs to be removed in production
-  configDevice();
+  //configDevice();
   
   // *** If no "config" is found or "config" is not "done", run configDevice ***
   if (!cfg.containsKey("config") || strcmp((const char*)cfg["config"], "done")) {
@@ -94,9 +106,20 @@ void setup() {
   WiFi.mode(WIFI_STA);
   WiFi.begin((const char*)cfg["ssid"], (const char*)cfg["w_pw"]);
   while (WiFi.status() != WL_CONNECTED) {
+    u8g2.clearBuffer();
+    u8g2.setFont(u8g2_font_ncenB08_tr);
+    u8g2.drawStr(0, 10, "Wifi not connected configured");
+    u8g2.sendBuffer();
     delay(500);
     Serial.print(".");
   }
+
+ u8g2_prepare();
+  u8g2.clearBuffer();
+    u8g2.setFont(u8g2_font_ncenB08_tr);
+    u8g2.drawStr(0, 10, "Wifi connected configured");
+    u8g2.drawStr(0, 30, WiFi.localIP().toString().c_str());
+    u8g2.sendBuffer();
   // main setup
   Serial.printf("\nIP address : ");
   Serial.println(WiFi.localIP());
@@ -106,5 +129,39 @@ void setup() {
   }
 }
 
+void u8g2_prepare(void) {
+  u8g2.setFont(u8g2_font_6x10_tf);
+  u8g2.setFontRefHeightExtendedText();
+  u8g2.setDrawColor(1);
+  u8g2.setFontPosTop();
+  u8g2.setFontDirection(0);
+}
+
 void loop() {
+  Serial.println("Loop is running...");
+  delay(500);
+}
+
+#include <HTTPUpdate.h>
+
+void doOTAUpdate() {
+  t_httpUpdate_return ret = HTTP_UPDATE_OK;
+  //httpUpdate.update("http://your-server.com/firmware.bin");
+
+  switch (ret) {
+    case HTTP_UPDATE_FAILED:
+      Serial.printf("Update failed. Error (%d): %s\n", 
+        httpUpdate.getLastError(), 
+        httpUpdate.getLastErrorString().c_str());
+      break;
+
+    case HTTP_UPDATE_NO_UPDATES:
+      Serial.println("No update available.");
+      break;
+
+    case HTTP_UPDATE_OK:
+      Serial.println("Update successful, rebooting...");
+      //ESP.restart();
+      break;
+  }
 }
