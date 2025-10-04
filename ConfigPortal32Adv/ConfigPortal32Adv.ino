@@ -1,4 +1,3 @@
-#include <LittleFS.h>
 
 #include <Arduino.h>
 #include <ESPmDNS.h>
@@ -6,6 +5,30 @@
 #include <LittleFS.h>
 #include <Wire.h>
 
+#include <ArduinoIoTCloud.h>
+#include <LittleFS.h>
+#include <WiFiServer.h>
+#include <WiFiType.h>
+#include <WiFiSTA.h>
+#include <WiFiAP.h>
+#include <WiFi.h>
+#include <WiFiScan.h>
+#include <WiFiUdp.h>
+#include <WiFiGeneric.h>
+#include <WiFiClient.h>
+#include <WiFiMulti.h>
+
+#include <Arduino_Lzss.h>
+#include <Arduino_FlashFormatter.h>
+#include <Arduino_HEX.h>
+#include <Arduino_TimedAttempt.h>
+#include <Arduino_CBOR.h>
+#include <Arduino_CRC32.h>
+#include <Arduino_SHA256.h>
+#include <Arduino_TinyCBOR.h>
+#include <Arduino_CRC16.h>
+
+#include "thingProperties.h"
 
 char* ssid_pfix = (char*)"CaptivePortal";
 String user_config_html = "";
@@ -114,12 +137,12 @@ void setup() {
     Serial.print(".");
   }
 
- u8g2_prepare();
+  u8g2_prepare();
   u8g2.clearBuffer();
-    u8g2.setFont(u8g2_font_ncenB08_tr);
-    u8g2.drawStr(0, 10, "Wifi connected configured");
-    u8g2.drawStr(0, 30, WiFi.localIP().toString().c_str());
-    u8g2.sendBuffer();
+  u8g2.setFont(u8g2_font_ncenB08_tr);
+  u8g2.drawStr(0, 10, "Wifi connected configured");
+  u8g2.drawStr(0, 30, WiFi.localIP().toString().c_str());
+  u8g2.sendBuffer();
   // main setup
   Serial.printf("\nIP address : ");
   Serial.println(WiFi.localIP());
@@ -127,6 +150,13 @@ void setup() {
   if (MDNS.begin("miniwifi")) {
     Serial.println("MDNS responder started");
   }
+
+  
+  
+  //WiFiConnectionHandler ArduinoIoTPreferredConnection;
+  initProperties();
+  ArduinoCloud.begin(ArduinoIoTPreferredConnection);
+  setDebugMessageLevel(2);
 }
 
 void u8g2_prepare(void) {
@@ -140,7 +170,52 @@ void u8g2_prepare(void) {
 void loop() {
   Serial.println("Loop is running...");
   delay(500);
+
+  ArduinoCloud.update();
 }
+
+
+
+/*
+    Since Temperature is READ_WRITE variable, onTemperatureChange() is
+    executed every time a new value is received from IoT Cloud.
+  */
+  void onTemperatureChange()  {
+    // Add your code here to act upon Temperature change
+  }
+  
+  /*
+    Since Humidity is READ_WRITE variable, onHumidityChange() is
+    executed every time a new value is received from IoT Cloud.
+  */
+  void onHumidityChange()  {
+    // Add your code here to act upon Humidity change
+  }
+  
+  /*
+    Since LightLevel is READ_WRITE variable, onLightLevelChange() is
+    executed every time a new value is received from IoT Cloud.
+  */
+  void onLightLevelChange()  {
+    // Add your code here to act upon LightLevel change
+  }
+  
+  /*
+    Since SoilMoisture is READ_WRITE variable, onSoilMoistureChange() is
+    executed every time a new value is received from IoT Cloud.
+  */
+  void onSoilMoistureChange()  {
+    // Add your code here to act upon SoilMoisture change
+  }
+  
+  /*
+    Since PumpState is READ_WRITE variable, onPumpStateChange() is
+    executed every time a new value is received from IoT Cloud.
+  */
+  void onPumpStateChange()  {
+    // Add your code here to act upon PumpState change
+  }
+  
 
 #include <HTTPUpdate.h>
 
