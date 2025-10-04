@@ -124,23 +124,35 @@ void setup() {
   if (!cfg.containsKey("config") || strcmp((const char*)cfg["config"], "done")) {
     configDevice();
   }
-  
+
+
+  unsigned long startAttemptTime = millis();
+  const unsigned long WIFI_TIMEOUT_MS = 20000; // 20 seconds
   // Normal startup, no config
   WiFi.mode(WIFI_STA);
   WiFi.begin((const char*)cfg["ssid"], (const char*)cfg["w_pw"]);
-  while (WiFi.status() != WL_CONNECTED) {
+  while (WiFi.status() != WL_CONNECTED && millis() - startAttemptTime < WIFI_TIMEOUT_MS) {
     u8g2.clearBuffer();
     u8g2.setFont(u8g2_font_ncenB08_tr);
-    u8g2.drawStr(0, 10, "Wifi not connected configured");
+    u8g2.drawStr(0, 10, "Connecting ... ");
     u8g2.sendBuffer();
     delay(500);
     Serial.print(".");
   }
 
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("Failed to connect. Starting AP mode.");
+    u8g2.clearBuffer();
+    u8g2.setFont(u8g2_font_ncenB08_tr);
+    u8g2.drawStr(0, 10, "Failed to connect. Starting AP mode.");
+    u8g2.sendBuffer();
+    configDevice();  // start AP + portal to configure new credentials
+  }
+
   u8g2_prepare();
   u8g2.clearBuffer();
   u8g2.setFont(u8g2_font_ncenB08_tr);
-  u8g2.drawStr(0, 10, "Wifi connected configured");
+  u8g2.drawStr(0, 10, "Wifi connected");
   u8g2.drawStr(0, 30, WiFi.localIP().toString().c_str());
   u8g2.sendBuffer();
   // main setup
