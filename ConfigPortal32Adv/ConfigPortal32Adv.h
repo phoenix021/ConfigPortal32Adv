@@ -22,7 +22,7 @@
  *  - The sketch uses almost 1Mb of flash, you might want to increase the firmware partition size in ESP32
  */
 
-
+volatile bool configDone = false;
 
 #include <WiFi.h>
 #include <WebServer.h>
@@ -123,6 +123,7 @@ void byte2buff(char* msg, byte* payload, unsigned int len) {
 }
 
 void save_config_json() {
+  //saveNewNetwork(webServer.arg("ssid").c_str(), webServer.arg("w_pw").c_str())
   File f = LittleFS.open(cfgFile, "w");
   serializeJson(cfg, f);
   f.close();
@@ -141,10 +142,66 @@ void maskConfig(char* buff) {
   serializeJson(temp_cfg, buff, JSON_CHAR_LENGTH);
 }
 
+
+void saveNewNetwork(const char* ssid, const char* password) {
+  if (!cfg.containsKey("savedNetworks")) {
+    cfg["savedNetworks"] = JsonArray();
+  }
+  JsonArray savedNetworks = cfg["savedNetworks"].as<JsonArray>();
+
+  // Check if SSID already exists and update
+  for (JsonObject network : savedNetworks) {
+    if (strcmp(network["ssid"], ssid) == 0) {
+      network["password"] = password;
+      save_config_json();
+      return;
+    }
+  }
+
+  // Append new network
+  JsonObject newNet = savedNetworks.createNestedObject();
+  newNet["ssid"] = ssid;
+  newNet["password"] = password;
+
+  save_config_json();
+}
+
 IRAM_ATTR void reboot() {
   WiFi.disconnect();
   ESP.restart();
 }
+
+
+void loadConfigWithSavedNetworks() {
+    if (!LittleFS.begin()) {
+    Serial.println("LittleFS mount failed, formatting...");
+    LittleFS.format();
+    LittleFS.begin();
+  }
+
+  if (LittleFS.exists(cfgFile)) {
+    File f = LittleFS.open(cfgFile, "r");
+    DeserializationError error = deserializeJson(cfg, f.readString());
+    f.close();
+
+    if (error) {
+      Serial.println("Deserialization error, using default config");
+      deserializeJson(cfg, "{\"meta\":{}, \"savedNetworks\":[]}");
+    } else {
+      Serial.println("CONFIG JSON Successfully loaded");
+    }
+  } else {
+    Serial.println("Config file not found, using default config");
+    deserializeJson(cfg, "{\"meta\":{}, \"savedNetworks\":[]}");
+  }
+
+  if (!cfg["savedNetworks"] || !cfg["savedNetworks"].is<JsonArray>()) {
+    Serial.println("Fixing savedNetworks (was null or invalid)");
+    cfg["savedNetworks"] = cfg.createNestedArray("savedNetworks");
+    save_config_json(); // Optional: Persist fix to disk immediately
+  }
+}
+
 
 void loadConfig() {
   // check Factory Reset Request and reset if requested or load the config
@@ -182,6 +239,49 @@ void loadConfig() {
   }
 }
 
+
+
+bool wifiConnect(const char* ssid, const char* password, uint16_t timeoutMs = 10000) {
+  Serial.printf("Attempting to connect to SSID: %s\n", ssid);
+  WiFi.begin(ssid, password);
+
+  unsigned long startAttemptTime = millis();
+
+  while (WiFi.status() != WL_CONNECTED && (millis() - startAttemptTime) < timeoutMs) {
+    u8g2.clearBuffer();
+    u8g2.setFont(u8g2_font_ncenB08_tr);
+    u8g2.drawStr(0, 10, "Connecting ... ");
+    u8g2.sendBuffer();
+    delay(500);
+    Serial.print(".");
+  }
+
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.printf("\nConnected to %s. IP address: %s\n", ssid, WiFi.localIP().toString().c_str());
+    u8g2.clearBuffer();
+    u8g2.setFont(u8g2_font_ncenB08_tr);
+    u8g2.drawStr(0, 10, "Connected to:");
+    u8g2.drawStr(0, 30, ssid);
+    u8g2.drawStr(0, 50, WiFi.localIP().toString().c_str());
+    u8g2.sendBuffer();
+    // Update last connected SSID in config'
+    cfg["lastConnectedSSID"] = ssid;
+    
+    saveNewNetwork(webServer.arg("ssid").c_str(), webServer.arg("w_pw").c_str());
+    //save_config_json();
+
+    return true;
+  } else {
+      u8g2.clearBuffer();
+      u8g2.setFont(u8g2_font_ncenB08_tr);
+      u8g2.drawStr(0, 10, "Failed to connect to :");
+      u8g2.drawStr(0, 30, ssid);
+      u8g2.sendBuffer();
+      Serial.printf("\nFailed to connect to %s within %d ms.\n", ssid, timeoutMs);
+      return false;
+  }
+}
+
 void saveEnv() {
   int args = webServer.args();
   for (int i = 0; i < args; i++) {
@@ -195,11 +295,19 @@ void saveEnv() {
       cfg[webServer.argName(i)] = temp;
     }
   }
-  cfg["config"] = "done";
-  save_config_json();
-  // redirect uri augmentation here
-  //
-  webServer.send(200, "text/html", redirect_html);
+
+  //if (webServer.hasArg("ssid") && webServer.hasArg("w_pw")) {
+  //  saveNewNetwork(webServer.arg("ssid").c_str(), webServer.arg("w_pw").c_str());
+  //}
+
+  bool connected = wifiConnect(webServer.arg("ssid").c_str(), webServer.arg("w_pw").c_str());
+
+  if (connected) {
+    webServer.send(200, "text/html", redirect_html);
+    delay(500);
+    configDone = true;
+    cfg["config"] = "done";
+  }
 }
 
 void pre_reboot() {
@@ -349,6 +457,7 @@ void sendConfigPage() {
 
 
 void configDevice() {
+  configDone = false;
   DNSServer dnsServer;
   const byte DNS_PORT = 53;
   IPAddress apIP(192, 168, 1, 1);
@@ -382,7 +491,7 @@ void configDevice() {
   u8g2.drawStr(0, 10, "Config Mode");
   u8g2.sendBuffer();
   Serial.println("starting the config");
-  while (1) {
+  while (!configDone){
     yield();
     dnsServer.processNextRequest();
     webServer.handleClient();

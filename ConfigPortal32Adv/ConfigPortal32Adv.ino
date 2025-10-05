@@ -116,35 +116,57 @@ void setup() {
 
   testLittleFS();
 
-  loadConfig();
+  //loadConfig();
+  loadConfigWithSavedNetworks();
   // TODO: the configDevice() call needs to be removed in production
   //configDevice();
   
   // *** If no "config" is found or "config" is not "done", run configDevice ***
+  //if (!cfg.containsKey("config") || strcmp((const char*)cfg["config"], "done")) {
+  //  configDevice();
+  //}
+
+  if (!cfg.containsKey("savedNetworks") || !cfg["savedNetworks"].is<JsonArray>() ) {
+    cfg["savedNetworks"] = JsonArray();
+  }
+
   if (!cfg.containsKey("config") || strcmp((const char*)cfg["config"], "done")) {
+    // Enter config mode (start AP and web portal)
     configDevice();
+
+    // After config saved via web portal:
+
+    //saveNewNetwork((const char*)cfg["ssid"], (const char*)cfg["w_pw"]);
+    //saveConfigToFile();
   }
 
-
-  unsigned long startAttemptTime = millis();
-  const unsigned long WIFI_TIMEOUT_MS = 20000; // 20 seconds
-  // Normal startup, no config
-  WiFi.mode(WIFI_STA);
-  WiFi.begin((const char*)cfg["ssid"], (const char*)cfg["w_pw"]);
-  while (WiFi.status() != WL_CONNECTED && millis() - startAttemptTime < WIFI_TIMEOUT_MS) {
-    u8g2.clearBuffer();
-    u8g2.setFont(u8g2_font_ncenB08_tr);
-    u8g2.drawStr(0, 10, "Connecting ... ");
-    u8g2.sendBuffer();
-    delay(500);
-    Serial.print(".");
+  while (WiFi.status() != WL_CONNECTED) {
+    loadConfigWithSavedNetworks();
+    if (!connectToKnownNetworks()) {
+     u8g2.clearBuffer();
+     u8g2.setFont(u8g2_font_ncenB08_tr);
+     u8g2.drawStr(0, 10, "WiFi Failed");
+     u8g2.drawStr(0, 30, "Starting AP mode");
+     u8g2.sendBuffer();
+     delay(2000); // optional pause to read
+     configDevice();  // fallback to AP config portal
+    } else {
+           u8g2.clearBuffer();
+     u8g2.setFont(u8g2_font_ncenB08_tr);
+     u8g2.drawStr(0, 10, "WiFi  Success");
+     u8g2.drawStr(0, 30, "in setup code part");
+     u8g2.sendBuffer();
+    }
   }
+
+  //saveNewNetwork((const char*)cfg["ssid"], (const char*)cfg["w_pw"]);
 
   if (WiFi.status() != WL_CONNECTED) {
     Serial.println("Failed to connect. Starting AP mode.");
     u8g2.clearBuffer();
     u8g2.setFont(u8g2_font_ncenB08_tr);
-    u8g2.drawStr(0, 10, "Failed to connect. Starting AP mode.");
+    u8g2.drawStr(0, 10, "WiFi Failed");
+    u8g2.drawStr(0, 30, "Starting AP mode");
     u8g2.sendBuffer();
     configDevice();  // start AP + portal to configure new credentials
   }
@@ -163,6 +185,8 @@ void setup() {
     Serial.println("MDNS responder started");
   }
 
+  cfg["lastConnectedSSID"] = WiFi.SSID();;
+  //save_config_json();
   
   
   //WiFiConnectionHandler ArduinoIoTPreferredConnection;
@@ -179,12 +203,125 @@ void u8g2_prepare(void) {
   u8g2.setFontDirection(0);
 }
 
+void format_config_json() {
+  if (!LittleFS.begin(true)) {
+    Serial.println("Failed to mount LittleFS. Cannot erase config.");
+    return;
+  }
+
+  if (LittleFS.exists("/config.json")) {
+    Serial.println("Erasing /config.json...");
+    LittleFS.remove("/config.json");
+    Serial.println("Config erased.");
+  } else {
+    Serial.println("No config file found to erase.");
+  }
+}
+
 void loop() {
   Serial.println("Loop is running...");
   delay(500);
 
+  if (Serial.available()) {
+    String input = Serial.readStringUntil('\n');
+    input.trim();
+    if (input == "eraseconfig") {
+      format_config_json();
+      Serial.println("Restarting...");
+      delay(1000);
+      ESP.restart();
+    }
+  }
+
   ArduinoCloud.update();
 }
+
+
+
+
+bool connectToNetwork() {
+  const char* lastSSID = cfg["lastConnectedSSID"] | "";
+
+  if (strlen(lastSSID) > 0) {
+    // Try connecting to last connected SSID first
+    JsonArray savedNetworks = cfg["savedNetworks"].as<JsonArray>();
+    for (JsonObject net : savedNetworks) {
+      if (strcmp(net["ssid"], lastSSID) == 0) {
+        Serial.print("Trying last connected network: ");
+        Serial.println(lastSSID);
+        if (wifiConnect(net["ssid"], net["password"])) {
+          Serial.println("Connected to last connected network!");
+          return true;
+        }
+      }
+    }
+  }
+
+  // If last connected network fails or not set, try others
+  JsonArray savedNetworks = cfg["savedNetworks"].as<JsonArray>();
+  for (JsonObject net : savedNetworks) {
+    if (strcmp(net["ssid"], lastSSID) == 0) {
+      // Already tried this one
+      continue;
+    }
+    Serial.print("Trying saved network: ");
+    Serial.println(net["ssid"].as<const char*>());
+    if (wifiConnect(net["ssid"], net["password"])) {
+      Serial.println("Connected!");
+      cfg["lastConnectedSSID"] = net["ssid"].as<const char*>();
+      save_config_json();
+      return true;
+    }
+  }
+  
+  Serial.println("Failed to connect to any saved networks.");
+  return false;
+}
+  
+bool connectToKnownNetworks() {
+  Serial.println("connectToKnownNetworks() called");
+
+  if (!cfg.containsKey("savedNetworks")) {
+    Serial.println("No saved networks in config.");
+    return false;
+  }
+
+  JsonArray savedNetworks = cfg["savedNetworks"].as<JsonArray>();
+  Serial.printf("Found %d saved networks.\n", savedNetworks.size());
+
+  // Scan available SSIDs
+  int n = WiFi.scanNetworks();
+  Serial.printf("Scan complete. Found %d networks.\n", n);
+
+  std::vector<String> visibleSSIDs;
+  for (int i = 0; i < n; i++) {
+    visibleSSIDs.push_back(WiFi.SSID(i));
+    Serial.printf(" - %s (RSSI: %d)\n", WiFi.SSID(i).c_str(), WiFi.RSSI(i));
+  }
+
+  // Try to connect only to visible saved networks
+  for (JsonObject net : savedNetworks) {
+    const char* ssid = net["ssid"];
+    const char* password = net["password"];
+
+    if (std::find(visibleSSIDs.begin(), visibleSSIDs.end(), ssid) == visibleSSIDs.end()) {
+      Serial.printf("Skipping %s: Not visible.\n", ssid);
+      continue;
+    }
+
+    Serial.printf("Trying saved network: %s\n", ssid);
+    if (wifiConnect(ssid, password)) {
+      Serial.println("Successfully connected.");
+      return true;
+    } else {
+      Serial.println("Connection failed.");
+    }
+  }
+
+  Serial.println("No known networks could be connected.");
+  return false;
+}
+
 
 
 
