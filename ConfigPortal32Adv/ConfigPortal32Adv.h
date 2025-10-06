@@ -62,6 +62,7 @@ String html_begin = ""
                     ".form-group input:focus+label,"
                     ".form-group input:not(:placeholder-shown)+label{top:-0.8em;left:1em;font-size:0.9em;color:#1fa3ec;background:#fff;padding:0 0.3em;}"
                     ".form-group input[type=\"color\"]{height:3em;padding:0.8em 0.5em;border:1px solid #ccc;border-radius:0.3em;background:none;appearance:none;-webkit-appearance:none;cursor:pointer;}"
+                    ".form {margin-bottom: 4em;}"
                     "</style>"
                     "</head><body>"
                     "<div class='container'>"
@@ -91,6 +92,30 @@ String redirect_html = ""
 
 String postSave_html;
 
+String wifi_scanner_html = R"rawliteral(
+  <h3>WiFi Scanner</h3>
+  <button type=button onclick="scanNetworks()">Scan WiFi</button>
+  <ul id="wifi-list"></ul>
+
+  <script>
+    function scanNetworks() {
+      fetch('/scan')
+        .then(response => response.json())
+        .then(data => {
+          let list = document.getElementById('wifi-list');
+          list.innerHTML = '';
+          data.networks.forEach(net => {
+            let li = document.createElement('li');
+            li.textContent = net.ssid + " (RSSI: " + net.rssi + ")";
+            list.appendChild(li);
+          });
+        })
+        .catch(err => {
+          alert("Error scanning WiFi: " + err);
+        });
+    }
+  </script>
+)rawliteral";
 
 /*
   Za zadavanje dodatnih polja u unosu
@@ -442,6 +467,8 @@ void sendConfigPage() {
   appendInputField("text", "w_pw", "Password", cfgOK ? (const char*)cfg["w_pw"] : "wifipwd", false);
   endGroup();
 
+  webServer.sendContent(wifi_scanner_html);
+
   if (userInputs.fields && userInputs.count > 0) {
     beginGroup("Extra Settings");
     for (size_t i = 0; i < userInputs.count; ++i) {
@@ -480,7 +507,21 @@ void configDevice() {
   webServer.on("/save", saveEnv);
   webServer.on("/reboot", reboot);
   webServer.on("/pre_boot", pre_reboot);
-
+  webServer.on("/scan", HTTP_GET, []() {
+    int n = WiFi.scanNetworks();
+    DynamicJsonDocument doc(1024);
+    JsonArray arr = doc.createNestedArray("networks");
+  
+    for (int i = 0; i < n; i++) {
+      JsonObject net = arr.createNestedObject();
+      net["ssid"] = WiFi.SSID(i);
+      net["rssi"] = WiFi.RSSI(i);
+    }
+  
+    String jsonStr;
+    serializeJson(doc, jsonStr);
+    webServer.send(200, "application/json", jsonStr);
+  });
   webServer.onNotFound([]() {
     sendConfigPage();
   });
