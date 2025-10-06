@@ -65,6 +65,8 @@ InputGroup userInputs = {
   sizeof(myInputs) / sizeof(myInputs[0])
 };
 
+#define BOOT_PIN 00
+
 
 /*
  *  ConfigPortal library to extend and implement the WiFi connected IOT device
@@ -104,6 +106,8 @@ void testLittleFS() {
 
 void setup() {
   Serial.begin(115200);
+
+  pinMode(BOOT_PIN, INPUT_PULLUP); 
 
   u8g2.begin();
 
@@ -233,6 +237,18 @@ void loop() {
     }
   }
 
+  if (digitalRead(BOOT_PIN) == LOW) {
+    Serial.println("Boot dugme pritisnuto"); 
+    u8g2.clearBuffer();
+    u8g2.setFont(u8g2_font_ncenB08_tr);
+    u8g2.drawStr(0, 10, "BOOT button pressed");
+    u8g2.drawStr(0, 30, "Going to config mode");
+    u8g2.sendBuffer();
+    delay(1500);
+    configDevice();
+  } else {
+    Serial.println("Click the boot button to configure new wifi network");
+  }
   ArduinoCloud.update();
 }
 
