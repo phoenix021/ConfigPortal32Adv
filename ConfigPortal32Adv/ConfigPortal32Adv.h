@@ -275,7 +275,8 @@ bool wifiConnect(const char* ssid, const char* password, uint16_t timeoutMs = 10
   while (WiFi.status() != WL_CONNECTED && (millis() - startAttemptTime) < timeoutMs) {
     u8g2.clearBuffer();
     u8g2.setFont(u8g2_font_ncenB08_tr);
-    u8g2.drawStr(0, 10, "Connecting ... ");
+    u8g2.drawStr(0, 10, ssid);
+    u8g2.drawStr(0, 30, "Connecting... ");
     u8g2.sendBuffer();
     delay(500);
     Serial.print(".");
@@ -293,7 +294,7 @@ bool wifiConnect(const char* ssid, const char* password, uint16_t timeoutMs = 10
     cfg["lastConnectedSSID"] = ssid;
     
     saveNewNetwork(webServer.arg("ssid").c_str(), webServer.arg("w_pw").c_str());
-    //save_config_json();
+    save_config_json();
 
     return true;
   } else {
@@ -332,6 +333,8 @@ void saveEnv() {
     delay(500);
     configDone = true;
     cfg["config"] = "done";
+    saveNewNetwork(webServer.arg("ssid").c_str(), webServer.arg("w_pw").c_str());
+    save_config_json();
   }
 }
 

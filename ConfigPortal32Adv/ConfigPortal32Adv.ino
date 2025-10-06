@@ -155,7 +155,7 @@ void setup() {
      delay(2000); // optional pause to read
      configDevice();  // fallback to AP config portal
     } else {
-           u8g2.clearBuffer();
+     u8g2.clearBuffer();
      u8g2.setFont(u8g2_font_ncenB08_tr);
      u8g2.drawStr(0, 10, "WiFi  Success");
      u8g2.drawStr(0, 30, "in setup code part");
@@ -179,7 +179,8 @@ void setup() {
   u8g2.clearBuffer();
   u8g2.setFont(u8g2_font_ncenB08_tr);
   u8g2.drawStr(0, 10, "Wifi connected");
-  u8g2.drawStr(0, 30, WiFi.localIP().toString().c_str());
+  u8g2.drawStr(0, 30, WiFi.SSID().c_str());
+  u8g2.drawStr(0, 50, WiFi.localIP().toString().c_str());
   u8g2.sendBuffer();
   // main setup
   Serial.printf("\nIP address : ");
@@ -190,7 +191,7 @@ void setup() {
   }
 
   cfg["lastConnectedSSID"] = WiFi.SSID();;
-  //save_config_json();
+  save_config_json();
   
   
   //WiFiConnectionHandler ArduinoIoTPreferredConnection;
