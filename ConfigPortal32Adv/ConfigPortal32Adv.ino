@@ -124,11 +124,6 @@ void setup() {
   loadConfigWithSavedNetworks();
   // TODO: the configDevice() call needs to be removed in production
   //configDevice();
-  
-  // *** If no "config" is found or "config" is not "done", run configDevice ***
-  //if (!cfg.containsKey("config") || strcmp((const char*)cfg["config"], "done")) {
-  //  configDevice();
-  //}
 
   if (!cfg.containsKey("savedNetworks") || !cfg["savedNetworks"].is<JsonArray>() ) {
     cfg["savedNetworks"] = JsonArray();
@@ -137,11 +132,6 @@ void setup() {
   if (!cfg.containsKey("config") || strcmp((const char*)cfg["config"], "done")) {
     // Enter config mode (start AP and web portal)
     configDevice();
-
-    // After config saved via web portal:
-
-    //saveNewNetwork((const char*)cfg["ssid"], (const char*)cfg["w_pw"]);
-    //saveConfigToFile();
   }
 
   while (WiFi.status() != WL_CONNECTED) {

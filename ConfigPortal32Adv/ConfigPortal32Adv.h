@@ -148,7 +148,6 @@ void byte2buff(char* msg, byte* payload, unsigned int len) {
 }
 
 void save_config_json() {
-  //saveNewNetwork(webServer.arg("ssid").c_str(), webServer.arg("w_pw").c_str())
   File f = LittleFS.open(cfgFile, "w");
   serializeJson(cfg, f);
   f.close();
@@ -322,20 +321,25 @@ void saveEnv() {
     }
   }
 
-  //if (webServer.hasArg("ssid") && webServer.hasArg("w_pw")) {
-  //  saveNewNetwork(webServer.arg("ssid").c_str(), webServer.arg("w_pw").c_str());
-  //}
+  if (webServer.hasArg("ssid") && webServer.hasArg("w_pw")) {
+      cfg["config"] = "done";
+      save_config_json();
+  }
 
   bool connected = wifiConnect(webServer.arg("ssid").c_str(), webServer.arg("w_pw").c_str());
 
   if (connected) {
     webServer.send(200, "text/html", redirect_html);
-    delay(500);
-    configDone = true;
-    cfg["config"] = "done";
+    cfg["lastConnectedSSID"] = WiFi.SSID();;
     saveNewNetwork(webServer.arg("ssid").c_str(), webServer.arg("w_pw").c_str());
-    save_config_json();
+    //save_config_json();
+    serializeJsonPretty(cfg, Serial);
+    delay(500);
+  } else {
+    Serial.println("User entered wrong credentials");
   }
+
+  configDone = true;
 }
 
 void pre_reboot() {
