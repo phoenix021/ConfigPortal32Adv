@@ -29,9 +29,22 @@
 #include <Arduino_CRC16.h>
 
 #include "thingProperties.h"
+#include "ConfigPortInterface.h"
 
 char* ssid_pfix = (char*)"CaptivePortal";
 String user_config_html = "";
+
+StaticJsonDocument<JSON_BUFFER_LENGTH> cfg;
+volatile bool configDone = false;
+char cfgFile[] = "/config.json";
+WebServer webServer(80); 
+
+void save_config_json() {
+  File f = LittleFS.open(cfgFile, "w");
+  serializeJson(cfg, f);
+  f.close();
+}
+
 
 InputField myInputs[] = {
   // Basic text input
@@ -64,8 +77,6 @@ InputGroup userInputs = {
   myInputs,
   sizeof(myInputs) / sizeof(myInputs[0])
 };
-
-#define BOOT_PIN 00
 
 
 /*
@@ -107,71 +118,39 @@ void testLittleFS() {
 void setup() {
   Serial.begin(115200);
 
-  pinMode(BOOT_PIN, INPUT_PULLUP); 
+  // set the pin mode through interface
+  set_boot_pin_mode();
 
-  u8g2.begin();
-
-  u8g2_prepare();
-
-  //u8g2.clearBuffer();          // clear the internal memory
-  //u8g2.setFont(u8g2_font_ncenB08_tr); // choose a suitable font
-  u8g2.drawStr(0,10,"Hello World!");  // write something to the internal memory
-  u8g2.sendBuffer();  
-
+  init_display();
+  display_hello_world();
   testLittleFS();
 
   //loadConfig();
-  loadConfigWithSavedNetworks();
+
   // TODO: the configDevice() call needs to be removed in production
   //configDevice();
 
-  if (!cfg.containsKey("savedNetworks") || !cfg["savedNetworks"].is<JsonArray>() ) {
-    cfg["savedNetworks"] = JsonArray();
-  }
+  setConfigReference(&cfg);
+  loadConfigWithSavedNetworks();
 
   if (!cfg.containsKey("config") || strcmp((const char*)cfg["config"], "done")) {
     // Enter config mode (start AP and web portal)
+    Serial.println("Entered config mode...");
+    display_message("Config Mode", "...", 2000);
     configDevice();
   }
 
+  bool connected = false;
   while (WiFi.status() != WL_CONNECTED) {
-    loadConfigWithSavedNetworks();
-    if (!connectToKnownNetworks()) {
-     u8g2.clearBuffer();
-     u8g2.setFont(u8g2_font_ncenB08_tr);
-     u8g2.drawStr(0, 10, "WiFi Failed");
-     u8g2.drawStr(0, 30, "Starting AP mode");
-     u8g2.sendBuffer();
-     delay(2000); // optional pause to read
-     configDevice();  // fallback to AP config portal
-    } else {
-     u8g2.clearBuffer();
-     u8g2.setFont(u8g2_font_ncenB08_tr);
-     u8g2.drawStr(0, 10, "WiFi  Success");
-     u8g2.drawStr(0, 30, "in setup code part");
-     u8g2.sendBuffer();
+      if (!connect_to_known_networks()) {
+        display_message_extended("WiFi Failed", "No known networks available", "Please configure...", 2000);
+        configDevice();  // fallback to AP config portal
+        connected = wifiConnect(cfg["ssid"], cfg["w_pw"],50000);
+        loadConfigWithSavedNetworks();
+        return;
+      }
     }
-  }
-
-  //saveNewNetwork((const char*)cfg["ssid"], (const char*)cfg["w_pw"]);
-
-  if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("Failed to connect. Starting AP mode.");
-    u8g2.clearBuffer();
-    u8g2.setFont(u8g2_font_ncenB08_tr);
-    u8g2.drawStr(0, 10, "WiFi Failed");
-    u8g2.drawStr(0, 30, "Starting AP mode");
-    u8g2.sendBuffer();
-    configDevice();  // start AP + portal to configure new credentials
-  }
-
-  u8g2_prepare();
-  u8g2.clearBuffer();
-  u8g2.setFont(u8g2_font_ncenB08_tr);
-  u8g2.drawStr(0, 10, "Wifi connected");
-  u8g2.drawStr(0, 30, WiFi.SSID().c_str());
-  u8g2.drawStr(0, 50, WiFi.localIP().toString().c_str());
-  u8g2.sendBuffer();
+ 
   // main setup
   Serial.printf("\nIP address : ");
   Serial.println(WiFi.localIP());
@@ -180,22 +159,9 @@ void setup() {
     Serial.println("MDNS responder started");
   }
 
-  cfg["lastConnectedSSID"] = WiFi.SSID();;
-  save_config_json();
-  
-  
-  //WiFiConnectionHandler ArduinoIoTPreferredConnection;
   initProperties();
   ArduinoCloud.begin(ArduinoIoTPreferredConnection);
   setDebugMessageLevel(2);
-}
-
-void u8g2_prepare(void) {
-  u8g2.setFont(u8g2_font_6x10_tf);
-  u8g2.setFontRefHeightExtendedText();
-  u8g2.setDrawColor(1);
-  u8g2.setFontPosTop();
-  u8g2.setFontDirection(0);
 }
 
 void format_config_json() {
@@ -227,172 +193,16 @@ void loop() {
       ESP.restart();
     }
   }
-
+  
   if (digitalRead(BOOT_PIN) == LOW) {
-    Serial.println("Boot dugme pritisnuto"); 
-    u8g2.clearBuffer();
-    u8g2.setFont(u8g2_font_ncenB08_tr);
-    u8g2.drawStr(0, 10, "BOOT button pressed");
-    u8g2.drawStr(0, 30, "Going to config mode");
-    u8g2.sendBuffer();
-    delay(1500);
-    configDevice();
+    Serial.println("Boot button pressed"); 
+    display_message("BOOT button pressed", "Configure device", 2000);
+    enter_config_mode();
+    bool connected = wifiConnect(cfg["ssid"], cfg["w_pw"],50000);
+    loadConfigWithSavedNetworks();
+    //configDevice();
   } else {
     Serial.println("Click the boot button to configure new wifi network");
   }
   ArduinoCloud.update();
-}
-
-
-
-
-bool connectToNetwork() {
-  const char* lastSSID = cfg["lastConnectedSSID"] | "";
-
-  if (strlen(lastSSID) > 0) {
-    // Try connecting to last connected SSID first
-    JsonArray savedNetworks = cfg["savedNetworks"].as<JsonArray>();
-    for (JsonObject net : savedNetworks) {
-      if (strcmp(net["ssid"], lastSSID) == 0) {
-        Serial.print("Trying last connected network: ");
-        Serial.println(lastSSID);
-        if (wifiConnect(net["ssid"], net["password"])) {
-          Serial.println("Connected to last connected network!");
-          return true;
-        }
-      }
-    }
-  }
-
-  // If last connected network fails or not set, try others
-  JsonArray savedNetworks = cfg["savedNetworks"].as<JsonArray>();
-  for (JsonObject net : savedNetworks) {
-    if (strcmp(net["ssid"], lastSSID) == 0) {
-      // Already tried this one
-      continue;
-    }
-    Serial.print("Trying saved network: ");
-    Serial.println(net["ssid"].as<const char*>());
-    if (wifiConnect(net["ssid"], net["password"])) {
-      Serial.println("Connected!");
-      cfg["lastConnectedSSID"] = net["ssid"].as<const char*>();
-      save_config_json();
-      return true;
-    }
-  }
-  
-  Serial.println("Failed to connect to any saved networks.");
-  return false;
-}
-  
-bool connectToKnownNetworks() {
-  Serial.println("connectToKnownNetworks() called");
-
-  if (!cfg.containsKey("savedNetworks")) {
-    Serial.println("No saved networks in config.");
-    return false;
-  }
-
-  JsonArray savedNetworks = cfg["savedNetworks"].as<JsonArray>();
-  Serial.printf("Found %d saved networks.\n", savedNetworks.size());
-
-  // Scan available SSIDs
-  int n = WiFi.scanNetworks();
-  Serial.printf("Scan complete. Found %d networks.\n", n);
-
-  std::vector<String> visibleSSIDs;
-  for (int i = 0; i < n; i++) {
-    visibleSSIDs.push_back(WiFi.SSID(i));
-    Serial.printf(" - %s (RSSI: %d)\n", WiFi.SSID(i).c_str(), WiFi.RSSI(i));
-  }
-
-  // Try to connect only to visible saved networks
-  for (JsonObject net : savedNetworks) {
-    const char* ssid = net["ssid"];
-    const char* password = net["password"];
-
-    if (std::find(visibleSSIDs.begin(), visibleSSIDs.end(), ssid) == visibleSSIDs.end()) {
-      Serial.printf("Skipping %s: Not visible.\n", ssid);
-      continue;
-    }
-
-    Serial.printf("Trying saved network: %s\n", ssid);
-    if (wifiConnect(ssid, password)) {
-      Serial.println("Successfully connected.");
-      return true;
-    } else {
-      Serial.println("Connection failed.");
-    }
-  }
-
-  Serial.println("No known networks could be connected.");
-  return false;
-}
-
-
-
-
-/*
-    Since Temperature is READ_WRITE variable, onTemperatureChange() is
-    executed every time a new value is received from IoT Cloud.
-  */
-  void onTemperatureChange()  {
-    // Add your code here to act upon Temperature change
-  }
-  
-  /*
-    Since Humidity is READ_WRITE variable, onHumidityChange() is
-    executed every time a new value is received from IoT Cloud.
-  */
-  void onHumidityChange()  {
-    // Add your code here to act upon Humidity change
-  }
-  
-  /*
-    Since LightLevel is READ_WRITE variable, onLightLevelChange() is
-    executed every time a new value is received from IoT Cloud.
-  */
-  void onLightLevelChange()  {
-    // Add your code here to act upon LightLevel change
-  }
-  
-  /*
-    Since SoilMoisture is READ_WRITE variable, onSoilMoistureChange() is
-    executed every time a new value is received from IoT Cloud.
-  */
-  void onSoilMoistureChange()  {
-    // Add your code here to act upon SoilMoisture change
-  }
-  
-  /*
-    Since PumpState is READ_WRITE variable, onPumpStateChange() is
-    executed every time a new value is received from IoT Cloud.
-  */
-  void onPumpStateChange()  {
-    // Add your code here to act upon PumpState change
-  }
-  
-
-#include <HTTPUpdate.h>
-
-void doOTAUpdate() {
-  t_httpUpdate_return ret = HTTP_UPDATE_OK;
-  //httpUpdate.update("http://your-server.com/firmware.bin");
-
-  switch (ret) {
-    case HTTP_UPDATE_FAILED:
-      Serial.printf("Update failed. Error (%d): %s\n", 
-        httpUpdate.getLastError(), 
-        httpUpdate.getLastErrorString().c_str());
-      break;
-
-    case HTTP_UPDATE_NO_UPDATES:
-      Serial.println("No update available.");
-      break;
-
-    case HTTP_UPDATE_OK:
-      Serial.println("Update successful, rebooting...");
-      //ESP.restart();
-      break;
-  }
 }

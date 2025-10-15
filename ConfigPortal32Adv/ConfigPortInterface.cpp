@@ -1,0 +1,372 @@
+#include "ConfigPortInterface.h"
+#include <Arduino.h>
+#include <U8g2lib.h>
+#include <ArduinoJson.h>
+
+U8G2_SH1106_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE);
+// Declare the original functions from the main .ino file
+extern void format_config_json();
+bool connectToKnownNetworks(void);
+extern char cfgFile[];
+
+static StaticJsonDocument<JSON_BUFFER_LENGTH>* cfgPtr = nullptr;
+
+void setConfigReference(StaticJsonDocument<JSON_BUFFER_LENGTH>* externalCfg) {
+    cfgPtr = externalCfg;
+    
+  if (!(*cfgPtr).containsKey("savedNetworks") || !(*cfgPtr)["savedNetworks"].is<JsonArray>() ) {
+    (*cfgPtr)["savedNetworks"] = JsonArray();
+  }
+}
+
+
+extern void configDevice();
+extern void doOTAUpdate();
+
+
+void set_boot_pin_mode(void) {
+    pinMode(BOOT_PIN, INPUT_PULLUP);
+}
+
+void set_boot_pin_mode(int pin) {
+    pinMode(pin, INPUT_PULLUP);
+}
+
+
+void u8g2_prepare(void) {
+    u8g2.setFont(u8g2_font_6x10_tf);
+    u8g2.setFontRefHeightExtendedText();
+    u8g2.setDrawColor(1);
+    u8g2.setFontPosTop();
+    u8g2.setFontDirection(0);
+}
+
+void init_display(void) {
+    u8g2.begin();
+    u8g2_prepare();
+}
+
+void display_hello_world(void) {
+    u8g2.clearBuffer();                          // Clear internal buffer
+    u8g2.setFont(u8g2_font_ncenB08_tr);          // Optional: set specific font
+    u8g2.drawStr(0, 10, "Hello World!");         // Write string
+    u8g2.sendBuffer();                           // Push buffer to display
+}
+
+void display_message(const char* line1, const char* line2, unsigned long pause_ms) {
+    u8g2.clearBuffer();
+    u8g2.setFont(u8g2_font_ncenB08_tr);
+    if (line1 != nullptr) {
+        u8g2.drawStr(0, 10, line1);
+    }
+    if (line2 != nullptr) {
+        u8g2.drawStr(0, 30, line2);
+    }
+    u8g2.sendBuffer();
+
+    if (pause_ms > 0) {
+        delay(pause_ms);
+    }
+}
+
+void display_message_extended(const char* line1, const char* line2, const char* line3, unsigned long pause_ms) {
+    u8g2.clearBuffer();
+    u8g2.setFont(u8g2_font_ncenB08_tr);
+
+    if (line1 != nullptr) {
+        u8g2.drawStr(0, 10, line1);
+    }
+    if (line2 != nullptr) {
+        u8g2.drawStr(0, 30, line2);
+    }
+    if (line3 != nullptr) {
+        u8g2.drawStr(0, 50, line3);
+    }
+
+    u8g2.sendBuffer();
+
+    if (pause_ms > 0) {
+        delay(pause_ms);
+    }
+}
+
+// Wrappers for external interface
+void format_config_json_interface() {
+    format_config_json();
+}
+
+extern bool connect_to_known_networks() {
+    return connectToKnownNetworks();
+}
+
+void enter_config_mode() {
+    configDevice();
+}
+
+void perform_ota_update() {
+    doOTAUpdate();
+}
+
+
+
+void saveNewNetwork(const char* ssid, const char* password) {
+  if (!(*cfgPtr).containsKey("savedNetworks")) {
+    (*cfgPtr)["savedNetworks"] = JsonArray();
+  }
+  JsonArray savedNetworks = (*cfgPtr)["savedNetworks"].as<JsonArray>();
+
+  // Check if SSID already exists and update
+  for (JsonObject network : savedNetworks) {
+    if (strcmp(network["ssid"], ssid) == 0) {
+      network["password"] = password;
+      save_config_json();
+      return;
+    }
+  }
+
+  // Append new network
+  JsonObject newNet = savedNetworks.createNestedObject();
+  newNet["ssid"] = ssid;
+  newNet["password"] = password;
+
+  save_config_json();
+}
+
+bool wifiConnect(const char* ssid, const char* password, uint16_t timeoutMs = 100000) {
+  Serial.printf("Attempting to connect to SSID: %s\n", ssid);
+  WiFi.begin(ssid, password);
+
+  unsigned long startAttemptTime = millis();
+
+  while (WiFi.status() != WL_CONNECTED && (millis() - startAttemptTime) < timeoutMs) {
+    display_message(ssid, "Connecting...",5000);
+    Serial.print(".");
+  }
+
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.printf("\nConnected to %s. IP address: %s\n", ssid, WiFi.localIP().toString().c_str());
+    display_message_extended("WiFi connected", WiFi.SSID().c_str(), WiFi.localIP().toString().c_str(), 3000);
+    // Update last connected SSID in config'
+    (*cfgPtr)["lastConnectedSSID"] = ssid;
+    
+    saveNewNetwork(ssid, password);
+    save_config_json();
+
+    return true;
+  } else {
+      display_message("Failed to connect to:", ssid ,5000);
+      u8g2.clearBuffer();
+      u8g2.setFont(u8g2_font_ncenB08_tr);
+      u8g2.drawStr(0, 10, "Failed to connect to :");
+      u8g2.drawStr(0, 30, ssid);
+      u8g2.sendBuffer();
+      Serial.printf("\nFailed to connect to %s within %d ms.\n", ssid, timeoutMs);
+      return false;
+  }
+}
+
+
+bool connectToKnownNetworks() {
+  Serial.println("connectToKnownNetworks() called");
+
+  if (!(*cfgPtr).containsKey("savedNetworks")) {
+    Serial.println("No saved networks in config.");
+    return false;
+  }
+  JsonArray savedNetworks = (*cfgPtr)["savedNetworks"].as<JsonArray>();
+  Serial.printf("Found %d saved networks.\n", savedNetworks.size());
+  
+  const char* lastSSID = (*cfgPtr)["lastConnectedSSID"] | "";
+  if (strlen(lastSSID) > 0) {
+    // Try connecting to last connected SSID first
+   
+    for (JsonObject net : savedNetworks) {
+      if (strcmp(lastSSID, net["ssid"])== 0 ){
+        if (wifiConnect(lastSSID, net["password"])) {
+            Serial.println("Connected to last connected network!");
+            return true;
+        }
+      }
+    }
+      
+  }
+
+  // Scan available SSIDs
+  int n = WiFi.scanNetworks();
+  Serial.printf("Scan complete. Found %d networks.\n", n);
+
+  std::vector<String> visibleSSIDs;
+  for (int i = 0; i < n; i++) {
+    visibleSSIDs.push_back(WiFi.SSID(i));
+    Serial.printf(" - %s (RSSI: %d)\n", WiFi.SSID(i).c_str(), WiFi.RSSI(i));
+  }
+
+  const char* lastSsid = "";
+  const char* lastPsw = "";
+  
+  // Try to connect only to visible saved networks
+  for (JsonObject net : savedNetworks) {
+    const char* ssid = net["ssid"];
+    const char* password = net["password"];
+
+    if (std::find(visibleSSIDs.begin(), visibleSSIDs.end(), ssid) == visibleSSIDs.end()) {
+      Serial.printf("Skipping %s: Not visible.\n", ssid);
+      continue;
+    }
+
+    if (wifiConnect(ssid, password)) {
+        Serial.println("Successfully connected.");
+        (*cfgPtr)["lastConnectedSSID"] = WiFi.SSID();;
+        saveNewNetwork((*cfgPtr)["ssid"], (*cfgPtr)["w_pw"]);
+        serializeJsonPretty((*cfgPtr), Serial);
+        return true;
+    } 
+  }
+  
+  Serial.println("No known networks could be connected.");
+  return false;
+}
+
+
+
+void loadConfigWithSavedNetworks() {
+    if (!LittleFS.begin()) {
+    Serial.println("LittleFS mount failed, formatting...");
+    LittleFS.format();
+    LittleFS.begin();
+  }
+
+  if (LittleFS.exists(cfgFile)) {
+    File f = LittleFS.open(cfgFile, "r");
+    DeserializationError error = deserializeJson(*cfgPtr, f.readString());
+    f.close();
+
+    if (error) {
+      Serial.println("Deserialization error, using default config");
+      deserializeJson(*cfgPtr, "{\"meta\":{}, \"savedNetworks\":[]}");
+    } else {
+      Serial.println("CONFIG JSON Successfully loaded");
+    }
+  } else {
+    Serial.println("Config file not found, using default config");
+    deserializeJson(*cfgPtr, "{\"meta\":{}, \"savedNetworks\":[]}");
+  }
+
+  if (!(*cfgPtr)["savedNetworks"] || !(*cfgPtr)["savedNetworks"].is<JsonArray>()) {
+    Serial.println("Fixing savedNetworks (was null or invalid)");
+    (*cfgPtr)["savedNetworks"] = (*cfgPtr).createNestedArray("savedNetworks");
+    save_config_json(); // Optional: Persist fix to disk immediately
+  }
+}
+
+
+
+#include <HTTPUpdate.h>
+
+void doOTAUpdate() {
+  t_httpUpdate_return ret = HTTP_UPDATE_OK;
+  //httpUpdate.update("http://your-server.com/firmware.bin");
+
+  switch (ret) {
+    case HTTP_UPDATE_FAILED:
+      Serial.printf("Update failed. Error (%d): %s\n", 
+        httpUpdate.getLastError(), 
+        httpUpdate.getLastErrorString().c_str());
+      break;
+
+    case HTTP_UPDATE_NO_UPDATES:
+      Serial.println("No update available.");
+      break;
+
+    case HTTP_UPDATE_OK:
+      Serial.println("Update successful, rebooting...");
+      //ESP.restart();
+      break;
+  }
+}
+
+
+
+
+/*
+    Since Temperature is READ_WRITE variable, onTemperatureChange() is
+    executed every time a new value is received from IoT Cloud.
+  */
+  void onTemperatureChange()  {
+    // Add your code here to act upon Temperature change
+  }
+  
+  /*
+    Since Humidity is READ_WRITE variable, onHumidityChange() is
+    executed every time a new value is received from IoT Cloud.
+  */
+  void onHumidityChange()  {
+    // Add your code here to act upon Humidity change
+  }
+  
+  /*
+    Since LightLevel is READ_WRITE variable, onLightLevelChange() is
+    executed every time a new value is received from IoT Cloud.
+  */
+  void onLightLevelChange()  {
+    // Add your code here to act upon LightLevel change
+  }
+  
+  /*
+    Since SoilMoisture is READ_WRITE variable, onSoilMoistureChange() is
+    executed every time a new value is received from IoT Cloud.
+  */
+  void onSoilMoistureChange()  {
+    // Add your code here to act upon SoilMoisture change
+  }
+  
+  /*
+    Since PumpState is READ_WRITE variable, onPumpStateChange() is
+    executed every time a new value is received from IoT Cloud.
+  */
+  void onPumpStateChange()  {
+    // Add your code here to act upon PumpState change
+  }
+  
+void register_server_route(char* route){
+  webServer.on(route, HTTP_GET, []() {
+    int n = WiFi.scanNetworks();
+    DynamicJsonDocument doc(1024);
+    JsonArray arr = doc.createNestedArray("networks");
+  
+    for (int i = 0; i < n; i++) {
+      JsonObject net = arr.createNestedObject();
+      net["ssid"] = WiFi.SSID(i);
+      net["rssi"] = WiFi.RSSI(i);
+    }
+  
+    String jsonStr;
+    serializeJson(doc, jsonStr);
+    webServer.send(200, "application/json", jsonStr);
+  });
+}
+
+String wifi_scanner_html = R"rawliteral(
+  <h3>WiFi Scanner</h3>
+  <button type=button onclick="scanNetworks()">Scan WiFi</button>
+  <ul id="wifi-list"></ul>
+
+  <script>
+    function scanNetworks() {
+      fetch('/scan')
+        .then(response => response.json())
+        .then(data => {
+          let list = document.getElementById('wifi-list');
+          list.innerHTML = '';
+          data.networks.forEach(net => {
+            let li = document.createElement('li');
+            li.textContent = net.ssid + " (RSSI: " + net.rssi + ")";
+            list.appendChild(li);
+          });
+        })
+        .catch(err => {
+          alert("Error scanning WiFi: " + err);
+        });
+    }
+  </script>
+)rawliteral";

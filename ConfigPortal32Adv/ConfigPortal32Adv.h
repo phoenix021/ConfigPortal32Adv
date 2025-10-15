@@ -22,7 +22,7 @@
  *  - The sketch uses almost 1Mb of flash, you might want to increase the firmware partition size in ESP32
  */
 
-volatile bool configDone = false;
+extern volatile bool configDone;  
 
 #include <WiFi.h>
 #include <WebServer.h>
@@ -30,18 +30,19 @@ volatile bool configDone = false;
 #include <ArduinoJson.h>
 #include <LittleFS.h>
 
-#include <U8g2lib.h>
-U8G2_SH1106_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE);
 
 
 #define JSON_BUFFER_LENGTH 3072
 #define JSON_CHAR_LENGTH 1024
-StaticJsonDocument<JSON_BUFFER_LENGTH> cfg;
+extern StaticJsonDocument<JSON_BUFFER_LENGTH> cfg;
+extern String wifi_scanner_html;
+extern void register_server_route(char *);
 
-WebServer webServer(80);
+
+extern WebServer webServer;
 const int RESET_PIN = 0;
 
-char cfgFile[] = "/config.json";
+extern char cfgFile[];
 
 extern char* ssid_pfix;
 
@@ -92,30 +93,6 @@ String redirect_html = ""
 
 String postSave_html;
 
-String wifi_scanner_html = R"rawliteral(
-  <h3>WiFi Scanner</h3>
-  <button type=button onclick="scanNetworks()">Scan WiFi</button>
-  <ul id="wifi-list"></ul>
-
-  <script>
-    function scanNetworks() {
-      fetch('/scan')
-        .then(response => response.json())
-        .then(data => {
-          let list = document.getElementById('wifi-list');
-          list.innerHTML = '';
-          data.networks.forEach(net => {
-            let li = document.createElement('li');
-            li.textContent = net.ssid + " (RSSI: " + net.rssi + ")";
-            list.appendChild(li);
-          });
-        })
-        .catch(err => {
-          alert("Error scanning WiFi: " + err);
-        });
-    }
-  </script>
-)rawliteral";
 
 /*
   Za zadavanje dodatnih polja u unosu
@@ -147,11 +124,7 @@ void byte2buff(char* msg, byte* payload, unsigned int len) {
   msg[j] = '\0';
 }
 
-void save_config_json() {
-  File f = LittleFS.open(cfgFile, "w");
-  serializeJson(cfg, f);
-  f.close();
-}
+extern void save_config_json(void);
 
 void reset_config() {
   deserializeJson(cfg, "{meta:{}}");
@@ -167,63 +140,9 @@ void maskConfig(char* buff) {
 }
 
 
-void saveNewNetwork(const char* ssid, const char* password) {
-  if (!cfg.containsKey("savedNetworks")) {
-    cfg["savedNetworks"] = JsonArray();
-  }
-  JsonArray savedNetworks = cfg["savedNetworks"].as<JsonArray>();
-
-  // Check if SSID already exists and update
-  for (JsonObject network : savedNetworks) {
-    if (strcmp(network["ssid"], ssid) == 0) {
-      network["password"] = password;
-      save_config_json();
-      return;
-    }
-  }
-
-  // Append new network
-  JsonObject newNet = savedNetworks.createNestedObject();
-  newNet["ssid"] = ssid;
-  newNet["password"] = password;
-
-  save_config_json();
-}
-
 IRAM_ATTR void reboot() {
   WiFi.disconnect();
   ESP.restart();
-}
-
-
-void loadConfigWithSavedNetworks() {
-    if (!LittleFS.begin()) {
-    Serial.println("LittleFS mount failed, formatting...");
-    LittleFS.format();
-    LittleFS.begin();
-  }
-
-  if (LittleFS.exists(cfgFile)) {
-    File f = LittleFS.open(cfgFile, "r");
-    DeserializationError error = deserializeJson(cfg, f.readString());
-    f.close();
-
-    if (error) {
-      Serial.println("Deserialization error, using default config");
-      deserializeJson(cfg, "{\"meta\":{}, \"savedNetworks\":[]}");
-    } else {
-      Serial.println("CONFIG JSON Successfully loaded");
-    }
-  } else {
-    Serial.println("Config file not found, using default config");
-    deserializeJson(cfg, "{\"meta\":{}, \"savedNetworks\":[]}");
-  }
-
-  if (!cfg["savedNetworks"] || !cfg["savedNetworks"].is<JsonArray>()) {
-    Serial.println("Fixing savedNetworks (was null or invalid)");
-    cfg["savedNetworks"] = cfg.createNestedArray("savedNetworks");
-    save_config_json(); // Optional: Persist fix to disk immediately
-  }
 }
 
 
@@ -264,49 +183,6 @@ void loadConfig() {
 }
 
 
-
-bool wifiConnect(const char* ssid, const char* password, uint16_t timeoutMs = 10000) {
-  Serial.printf("Attempting to connect to SSID: %s\n", ssid);
-  WiFi.begin(ssid, password);
-
-  unsigned long startAttemptTime = millis();
-
-  while (WiFi.status() != WL_CONNECTED && (millis() - startAttemptTime) < timeoutMs) {
-    u8g2.clearBuffer();
-    u8g2.setFont(u8g2_font_ncenB08_tr);
-    u8g2.drawStr(0, 10, ssid);
-    u8g2.drawStr(0, 30, "Connecting... ");
-    u8g2.sendBuffer();
-    delay(500);
-    Serial.print(".");
-  }
-
-  if (WiFi.status() == WL_CONNECTED) {
-    Serial.printf("\nConnected to %s. IP address: %s\n", ssid, WiFi.localIP().toString().c_str());
-    u8g2.clearBuffer();
-    u8g2.setFont(u8g2_font_ncenB08_tr);
-    u8g2.drawStr(0, 10, "Connected to:");
-    u8g2.drawStr(0, 30, ssid);
-    u8g2.drawStr(0, 50, WiFi.localIP().toString().c_str());
-    u8g2.sendBuffer();
-    // Update last connected SSID in config'
-    cfg["lastConnectedSSID"] = ssid;
-    
-    saveNewNetwork(webServer.arg("ssid").c_str(), webServer.arg("w_pw").c_str());
-    save_config_json();
-
-    return true;
-  } else {
-      u8g2.clearBuffer();
-      u8g2.setFont(u8g2_font_ncenB08_tr);
-      u8g2.drawStr(0, 10, "Failed to connect to :");
-      u8g2.drawStr(0, 30, ssid);
-      u8g2.sendBuffer();
-      Serial.printf("\nFailed to connect to %s within %d ms.\n", ssid, timeoutMs);
-      return false;
-  }
-}
-
 void saveEnv() {
   int args = webServer.args();
   for (int i = 0; i < args; i++) {
@@ -324,19 +200,6 @@ void saveEnv() {
   if (webServer.hasArg("ssid") && webServer.hasArg("w_pw")) {
       cfg["config"] = "done";
       save_config_json();
-  }
-
-  bool connected = wifiConnect(webServer.arg("ssid").c_str(), webServer.arg("w_pw").c_str());
-
-  if (connected) {
-    webServer.send(200, "text/html", redirect_html);
-    cfg["lastConnectedSSID"] = WiFi.SSID();;
-    saveNewNetwork(webServer.arg("ssid").c_str(), webServer.arg("w_pw").c_str());
-    //save_config_json();
-    serializeJsonPretty(cfg, Serial);
-    delay(500);
-  } else {
-    Serial.println("User entered wrong credentials");
   }
 
   configDone = true;
@@ -514,30 +377,12 @@ void configDevice() {
   webServer.on("/save", saveEnv);
   webServer.on("/reboot", reboot);
   webServer.on("/pre_boot", pre_reboot);
-  webServer.on("/scan", HTTP_GET, []() {
-    int n = WiFi.scanNetworks();
-    DynamicJsonDocument doc(1024);
-    JsonArray arr = doc.createNestedArray("networks");
-  
-    for (int i = 0; i < n; i++) {
-      JsonObject net = arr.createNestedObject();
-      net["ssid"] = WiFi.SSID(i);
-      net["rssi"] = WiFi.RSSI(i);
-    }
-  
-    String jsonStr;
-    serializeJson(doc, jsonStr);
-    webServer.send(200, "application/json", jsonStr);
-  });
+  register_server_route("/scan");
   webServer.onNotFound([]() {
     sendConfigPage();
   });
 
   webServer.begin();
-  u8g2.clearBuffer();
-  u8g2.setFont(u8g2_font_ncenB08_tr);
-  u8g2.drawStr(0, 10, "Config Mode");
-  u8g2.sendBuffer();
   Serial.println("starting the config");
   while (!configDone){
     yield();
