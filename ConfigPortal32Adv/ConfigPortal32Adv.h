@@ -37,6 +37,7 @@ extern volatile bool configDone;
 extern StaticJsonDocument<JSON_BUFFER_LENGTH> cfg;
 extern String wifi_scanner_html;
 extern void register_server_route(char *);
+extern void setupScanRoute();
 
 
 extern WebServer webServer;
@@ -145,12 +146,8 @@ IRAM_ATTR void reboot() {
   ESP.restart();
 }
 
-
-void loadConfig() {
-  // check Factory Reset Request and reset if requested or load the config
-  if (!LittleFS.begin()) { LittleFS.format(); }  // before the reset_config and reading
-
-  pinMode(RESET_PIN, INPUT_PULLUP);
+void listenToResetPin(){
+   pinMode(RESET_PIN, INPUT_PULLUP);
   if (digitalRead(RESET_PIN) == 0) {
     unsigned long t1 = millis();
     while (digitalRead(RESET_PIN) == 0) {
@@ -162,6 +159,12 @@ void loadConfig() {
     }
   }
   attachInterrupt(RESET_PIN, reboot, FALLING);
+}
+
+void loadConfig() {
+  // check Factory Reset Request and reset if requested or load the config
+  if (!LittleFS.begin()) { LittleFS.format(); }  // before the reset_config and reading
+
 
   if (LittleFS.exists(cfgFile)) {
     String buff;
@@ -203,6 +206,7 @@ void saveEnv() {
   }
 
   configDone = true;
+  webServer.send(200, "text/html", redirect_html);"[p
 }
 
 void pre_reboot() {
@@ -377,11 +381,10 @@ void configDevice() {
   webServer.on("/save", saveEnv);
   webServer.on("/reboot", reboot);
   webServer.on("/pre_boot", pre_reboot);
-  register_server_route("/scan");
+  setupScanRoute();
   webServer.onNotFound([]() {
     sendConfigPage();
   });
-
   webServer.begin();
   Serial.println("starting the config");
   while (!configDone){

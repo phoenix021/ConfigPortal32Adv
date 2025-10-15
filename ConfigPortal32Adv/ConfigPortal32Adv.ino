@@ -146,7 +146,6 @@ void setup() {
         display_message_extended("WiFi Failed", "No known networks available", "Please configure...", 2000);
         configDevice();  // fallback to AP config portal
         connected = wifiConnect(cfg["ssid"], cfg["w_pw"],50000);
-        loadConfigWithSavedNetworks();
         return;
       }
     }
@@ -180,29 +179,11 @@ void format_config_json() {
 }
 
 void loop() {
-  Serial.println("Loop is running...");
-  delay(500);
+  //Serial.println("Loop is running...");
+  //delay(500);
 
-  if (Serial.available()) {
-    String input = Serial.readStringUntil('\n');
-    input.trim();
-    if (input == "eraseconfig") {
-      format_config_json();
-      Serial.println("Restarting...");
-      delay(1000);
-      ESP.restart();
-    }
-  }
+  handleSerialCommands();
+  handleBootButton();
   
-  if (digitalRead(BOOT_PIN) == LOW) {
-    Serial.println("Boot button pressed"); 
-    display_message("BOOT button pressed", "Configure device", 2000);
-    enter_config_mode();
-    bool connected = wifiConnect(cfg["ssid"], cfg["w_pw"],50000);
-    loadConfigWithSavedNetworks();
-    //configDevice();
-  } else {
-    Serial.println("Click the boot button to configure new wifi network");
-  }
   ArduinoCloud.update();
 }

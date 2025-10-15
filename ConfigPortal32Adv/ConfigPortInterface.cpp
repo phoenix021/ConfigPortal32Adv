@@ -4,7 +4,7 @@
 #include <ArduinoJson.h>
 
 U8G2_SH1106_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE);
-// Declare the original functions from the main .ino file
+
 extern void format_config_json();
 bool connectToKnownNetworks(void);
 extern char cfgFile[];
@@ -12,7 +12,7 @@ extern char cfgFile[];
 static StaticJsonDocument<JSON_BUFFER_LENGTH>* cfgPtr = nullptr;
 
 void setConfigReference(StaticJsonDocument<JSON_BUFFER_LENGTH>* externalCfg) {
-    cfgPtr = externalCfg;
+   cfgPtr = externalCfg;
     
   if (!(*cfgPtr).containsKey("savedNetworks") || !(*cfgPtr)["savedNetworks"].is<JsonArray>() ) {
     (*cfgPtr)["savedNetworks"] = JsonArray();
@@ -151,16 +151,11 @@ bool wifiConnect(const char* ssid, const char* password, uint16_t timeoutMs = 10
     
     saveNewNetwork(ssid, password);
     save_config_json();
+    loadConfigWithSavedNetworks();
 
     return true;
   } else {
       display_message("Failed to connect to:", ssid ,5000);
-      u8g2.clearBuffer();
-      u8g2.setFont(u8g2_font_ncenB08_tr);
-      u8g2.drawStr(0, 10, "Failed to connect to :");
-      u8g2.drawStr(0, 30, ssid);
-      u8g2.sendBuffer();
-      Serial.printf("\nFailed to connect to %s within %d ms.\n", ssid, timeoutMs);
       return false;
   }
 }
@@ -285,6 +280,43 @@ void doOTAUpdate() {
   }
 }
 
+
+void handleSerialCommands(){
+    if (Serial.available()) {
+    String input = Serial.readStringUntil('\n');
+    input.trim();
+    if (input == "eraseconfig") {
+      format_config_json();
+      Serial.println("Restarting...");
+      delay(1000);
+      ESP.restart();
+    }else if (input == "reboot") { 
+       ESP.restart(); 
+    }
+    else if (input == "info") {
+       
+      //printDeviceInfo(); 
+    } else {
+      Serial.print("Unknown command: ");
+      Serial.println(input);
+    }
+  }  
+}
+
+void handleBootButton() {
+  if (digitalRead(BOOT_PIN) == LOW) {
+    Serial.println("Boot button pressed");
+    display_message("BOOT button pressed", "Configure device", 2000);
+    enter_config_mode();
+
+    bool connected = wifiConnect((*cfgPtr)["ssid"], (*cfgPtr)["w_pw"], 50000);
+    loadConfigWithSavedNetworks();
+  }
+}
+
+void setupScanRoute() {
+  register_server_route("/scan");
+}
 
 
 

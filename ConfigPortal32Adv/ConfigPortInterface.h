@@ -18,6 +18,10 @@ extern WebServer webServer;
 
 extern void save_config_json();
 
+void handleSerialCommands(void);
+
+void handleBootButton(void);
+
 void saveNewNetwork(const char* ssid, const char* password);
 
 void loadConfigWithSavedNetworks(void);
@@ -58,6 +62,10 @@ void display_message_extended(const char* line1, const char* line2, const char* 
 bool wifiConnect(const char* ssid, const char* password, uint16_t timeoutMs);
 
 void doOTAUpdate(void);
+
+void setupScanRoute();
+
+void register_server_route(char* route);
 
 /*
     Since Temperature is READ_WRITE variable, onTemperatureChange() is
