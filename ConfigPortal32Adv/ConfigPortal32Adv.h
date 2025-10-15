@@ -206,7 +206,7 @@ void saveEnv() {
   }
 
   configDone = true;
-  webServer.send(200, "text/html", redirect_html);"[p
+  webServer.send(200, "text/html", redirect_html);
 }
 
 void pre_reboot() {

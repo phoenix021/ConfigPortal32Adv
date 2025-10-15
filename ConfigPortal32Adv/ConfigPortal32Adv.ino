@@ -29,7 +29,7 @@
 #include <Arduino_CRC16.h>
 
 #include "thingProperties.h"
-#include "ConfigPortInterface.h"
+#include "ConfigPortalUtils.h"
 
 char* ssid_pfix = (char*)"CaptivePortal";
 String user_config_html = "";
