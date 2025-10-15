@@ -55,7 +55,21 @@ This behavior is intentional for demonstration purposes. In a real application, 
 
 ---
 
+##### Example of real application usage
 
+The files ConfigPortalUtils.h and ConfigPortalUtils.h describe one possible expansion of the CaptivePortal32Adv described earlier.
+
+The logic to conditionaly display the portal only when configuration is required is implemented on the first configuration, and on demand via BOOT_PIN on the ESP32D board
+
+After configuration is done, ConfigPortalUtils exposes two ways of connecting to the WiFi network:
+  1. by calling directly wifiConnect function
+  2. by calling conenctToKnownNetworks function
+
+The function for connectiong to known networks implements the logic of remmembering the last connected network, and a list of all the previously connected network as pairs of ssid and password.
+
+ConfigPortalUtils also provides integration and interation with OLED display if it is connected.
+
+Other utils, like responding to serial commands are also present and easily extendable.
 
 ### Further Work
 
@@ -63,3 +77,4 @@ Potential improvements include:
 
 * Migrating to an async web server to free the main loop from frequent polling
 * Adding support for parameter arrays
+* Modularisation to smaller purpose code segmentation, and namespace appliance for reusability and scalability purposes.
