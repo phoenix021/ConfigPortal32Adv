@@ -1,6 +1,9 @@
 #ifndef CONFIG_PORTAL_INTERFACE_H
 #define CONFIG_PORTAL_INTERFACE_H
 
+
+#include <HTTPUpdate.h>
+#include <Update.h>
 #include <ArduinoJson.h>
 #include <LittleFS.h>
 #include <U8g2lib.h>
@@ -9,6 +12,7 @@
 #include <TelnetStream.h>
 extern U8G2_SH1106_128X64_NONAME_F_HW_I2C u8g2;
 extern WebServer webServer;
+
 
 #include <stdbool.h>
 
@@ -72,35 +76,5 @@ void setupScanRoute();
 
 void register_server_route(char* route);
 
-/*
-    Since Temperature is READ_WRITE variable, onTemperatureChange() is
-    executed every time a new value is received from IoT Cloud.
-  */
-  void onTemperatureChange(void);
-  
-  /*
-    Since Humidity is READ_WRITE variable, onHumidityChange() is
-    executed every time a new value is received from IoT Cloud.
-  */
-  void onHumidityChange(void);
-  
-  /*
-    Since LightLevel is READ_WRITE variable, onLightLevelChange() is
-    executed every time a new value is received from IoT Cloud.
-  */
-  void onLightLevelChange(void);
-  
-  /*
-    Since SoilMoisture is READ_WRITE variable, onSoilMoistureChange() is
-    executed every time a new value is received from IoT Cloud.
-  */
-  void onSoilMoistureChange(void);
-  
-  /*
-    Since PumpState is READ_WRITE variable, onPumpStateChange() is
-    executed every time a new value is received from IoT Cloud.
-  */
-  void onPumpStateChange(void);
-  
 
 #endif // CONFIG_PORTAL_INTERFACE_H

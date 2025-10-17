@@ -2,14 +2,10 @@
 
 #include "ConfigPortalUtils.h"
 #include <Arduino.h>
-#include <U8g2lib.h>
-#include <ArduinoJson.h>
 
+//#include <HTTPUpdate.h>
 
-
-#include <HTTPUpdate.h>
-
-#include <Update.h>
+//#include <Update.h>
 
 
 U8G2_SH1106_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE);
@@ -38,9 +34,10 @@ void startTelnetServer(void){
   TelnetStream.begin();
 }
 
+HTTPClient http;
 
 void performHttpOTA(const char* bin_url) {
-  HTTPClient http;
+
   http.begin(bin_url);  // e.g., "http://your-server.com/firmware.bin"
   int httpCode = http.GET();
 
@@ -380,44 +377,22 @@ void setupScanRoute() {
 
 
 /*
-    Since Temperature is READ_WRITE variable, onTemperatureChange() is
-    executed every time a new value is received from IoT Cloud.
-  */
-  void onTemperatureChange()  {
-    // Add your code here to act upon Temperature change
+  Since TriggerOtaUpdate is READ_WRITE variable, onTriggerOtaUpdateChange() is
+  executed every time a new value is received from IoT Cloud.
+*/
+
+extern bool triggerOtaUpdate;
+void onTriggerOtaUpdateChange()  { 
+ if (triggerOtaUpdate) {
+    Serial.println("[Cloud OTA] Trigger received from Arduino IoT Cloud Dashboard");
+
+    // Optional: debounce to avoid multiple triggers
+    triggerOtaUpdate = false;
+
+    // Start OTA update
+    performHttpOTA("http://192.168.1.136:8083/ConfigPortal32Adv.ino.esp32.bin");
   }
-  
-  /*
-    Since Humidity is READ_WRITE variable, onHumidityChange() is
-    executed every time a new value is received from IoT Cloud.
-  */
-  void onHumidityChange()  {
-    // Add your code here to act upon Humidity change
-  }
-  
-  /*
-    Since LightLevel is READ_WRITE variable, onLightLevelChange() is
-    executed every time a new value is received from IoT Cloud.
-  */
-  void onLightLevelChange()  {
-    // Add your code here to act upon LightLevel change
-  }
-  
-  /*
-    Since SoilMoisture is READ_WRITE variable, onSoilMoistureChange() is
-    executed every time a new value is received from IoT Cloud.
-  */
-  void onSoilMoistureChange()  {
-    // Add your code here to act upon SoilMoisture change
-  }
-  
-  /*
-    Since PumpState is READ_WRITE variable, onPumpStateChange() is
-    executed every time a new value is received from IoT Cloud.
-  */
-  void onPumpStateChange()  {
-    // Add your code here to act upon PumpState change
-  }
+}
   
 void register_server_route(char* route){
   webServer.on(route, HTTP_GET, []() {

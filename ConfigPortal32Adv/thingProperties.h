@@ -7,27 +7,15 @@ const char DEVICE_LOGIN_NAME[]  = "d6dbc4b1-e7aa-491b-98bb-a4212637d373";
 
 const char DEVICE_KEY[]  = "QnYR6H9O2R3a@vkY9DeFZIyem";    // Secret device password
 
-void onHumidityChange();
-void onLightLevelChange();
-void onSoilMoistureChange();
-void onTemperatureChange();
-void onPumpStateChange();
+void onTriggerOtaUpdateChange();
 
-float humidity;
-float lightLevel;
-float soilMoisture;
-float temperature;
-bool pumpState;
+bool triggerOtaUpdate;
 
 void initProperties(){
 
   ArduinoCloud.setBoardId(DEVICE_LOGIN_NAME);
   ArduinoCloud.setSecretDeviceKey(DEVICE_KEY);
-  ArduinoCloud.addProperty(humidity, READWRITE, ON_CHANGE, onHumidityChange);
-  ArduinoCloud.addProperty(lightLevel, READWRITE, ON_CHANGE, onLightLevelChange);
-  ArduinoCloud.addProperty(soilMoisture, READWRITE, ON_CHANGE, onSoilMoistureChange);
-  ArduinoCloud.addProperty(temperature, READWRITE, ON_CHANGE, onTemperatureChange);
-  ArduinoCloud.addProperty(pumpState, READWRITE, ON_CHANGE, onPumpStateChange);
+  ArduinoCloud.addProperty(triggerOtaUpdate, READWRITE, ON_CHANGE, onTriggerOtaUpdateChange);
 
 }
 
