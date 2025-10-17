@@ -6,6 +6,7 @@
 #include <U8g2lib.h>
 #include <WiFi.h>
 #include <WebServer.h>
+#include <TelnetStream.h>
 extern U8G2_SH1106_128X64_NONAME_F_HW_I2C u8g2;
 extern WebServer webServer;
 
@@ -17,6 +18,10 @@ extern WebServer webServer;
 #define JSON_BUFFER_LENGTH 3072
 
 extern void save_config_json();
+
+void startTelnetServer(void);
+
+void readTelnetStream(void);
 
 void handleSerialCommands(void);
 

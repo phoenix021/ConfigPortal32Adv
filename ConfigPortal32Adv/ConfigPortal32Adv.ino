@@ -158,6 +158,8 @@ void setup() {
     Serial.println("MDNS responder started");
   }
 
+  startTelnetServer();
+  
   initProperties();
   ArduinoCloud.begin(ArduinoIoTPreferredConnection);
   setDebugMessageLevel(2);
@@ -184,6 +186,8 @@ void loop() {
 
   handleSerialCommands();
   handleBootButton();
+
+  readTelnetStream();
   
   ArduinoCloud.update();
 }

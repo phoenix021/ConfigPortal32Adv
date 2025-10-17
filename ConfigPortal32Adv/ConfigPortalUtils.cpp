@@ -1,7 +1,16 @@
+#include <ArduinoOTA.h>
+
 #include "ConfigPortalUtils.h"
 #include <Arduino.h>
 #include <U8g2lib.h>
 #include <ArduinoJson.h>
+
+
+
+#include <HTTPUpdate.h>
+
+#include <Update.h>
+
 
 U8G2_SH1106_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE);
 
@@ -23,6 +32,81 @@ void setConfigReference(StaticJsonDocument<JSON_BUFFER_LENGTH>* externalCfg) {
 extern void configDevice();
 extern void doOTAUpdate();
 
+bool otaRequested = false;
+
+void startTelnetServer(void){
+  TelnetStream.begin();
+}
+
+
+void performHttpOTA(const char* bin_url) {
+  HTTPClient http;
+  http.begin(bin_url);  // e.g., "http://your-server.com/firmware.bin"
+  int httpCode = http.GET();
+
+  if (httpCode == HTTP_CODE_OK) {
+    int len = http.getSize();
+    WiFiClient* stream = http.getStreamPtr();
+
+    if (!Update.begin(len)) {
+      Serial.println("Update failed to begin");
+      return;
+    }
+
+    size_t written = Update.writeStream(*stream);
+    if (written == len) {
+      Serial.println("Update written successfully");
+    } else {
+      Serial.printf("Only %d/%d bytes written\n", written, len);
+    }
+
+    if (Update.end()) {
+      Serial.println("Update complete");
+      if (Update.isFinished()) {
+        Serial.println("Rebooting...");
+        ESP.restart();
+      } else {
+        Serial.println("Update not finished?");
+      }
+    } else {
+      Serial.printf("Update failed. Error #: %d\n", Update.getError());
+    }
+  } else {
+    Serial.printf("HTTP error: %d\n", httpCode);
+  }
+
+  http.end();
+  otaRequested = false;
+}
+
+void readTelnetStream() {
+  if (TelnetStream.available() ) {
+    String cmd = TelnetStream.readStringUntil('\n');
+    cmd.trim(); // removes \r and whitespace
+
+    if (cmd.length() > 0) {
+      char dev_id[32];
+      sprintf(dev_id, "d-%012llX", ESP.getEfuseMac());
+      if (Serial){
+        Serial.println("[Telnet] Command: " + cmd);
+      }
+      TelnetStream.println("Received: " + cmd);
+      TelnetStream.println("Dev id:: " + String(dev_id));
+
+      if (cmd == "OtaAvailable"){
+        //doOTAUpdate();
+      }
+
+      if (cmd == "startota") {
+        TelnetStream.println("Triggering OTA update... now use Arduino IDE to upload.");
+        otaRequested = true;
+        perform_ota_update();
+      } else {
+        TelnetStream.println("Unknown command: " + cmd);
+      }
+    }
+  }
+}
 
 void set_boot_pin_mode(void) {
     pinMode(BOOT_PIN, INPUT_PULLUP);
@@ -104,7 +188,7 @@ void enter_config_mode() {
 }
 
 void perform_ota_update() {
-    doOTAUpdate();
+    performHttpOTA("http://192.168.1.136:8083/ConfigPortal32Adv.ino.esp32.bin");
 }
 
 
@@ -254,33 +338,6 @@ void loadConfigWithSavedNetworks() {
   }
 }
 
-
-
-#include <HTTPUpdate.h>
-
-void doOTAUpdate() {
-  t_httpUpdate_return ret = HTTP_UPDATE_OK;
-  //httpUpdate.update("http://your-server.com/firmware.bin");
-
-  switch (ret) {
-    case HTTP_UPDATE_FAILED:
-      Serial.printf("Update failed. Error (%d): %s\n", 
-        httpUpdate.getLastError(), 
-        httpUpdate.getLastErrorString().c_str());
-      break;
-
-    case HTTP_UPDATE_NO_UPDATES:
-      Serial.println("No update available.");
-      break;
-
-    case HTTP_UPDATE_OK:
-      Serial.println("Update successful, rebooting...");
-      //ESP.restart();
-      break;
-  }
-}
-
-
 void handleSerialCommands(){
     if (Serial.available()) {
     String input = Serial.readStringUntil('\n');
@@ -305,7 +362,9 @@ void handleSerialCommands(){
 
 void handleBootButton() {
   if (digitalRead(BOOT_PIN) == LOW) {
-    Serial.println("Boot button pressed");
+    if (Serial){
+      Serial.println("Boot button pressed");
+    }
     display_message("BOOT button pressed", "Configure device", 2000);
     enter_config_mode();
 
