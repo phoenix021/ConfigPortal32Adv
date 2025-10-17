@@ -9,6 +9,7 @@
 #include <U8g2lib.h>
 #include <WiFi.h>
 #include <WebServer.h>
+#include <ArduinoIoTCloud.h>
 #include <TelnetStream.h>
 extern U8G2_SH1106_128X64_NONAME_F_HW_I2C u8g2;
 extern WebServer webServer;
@@ -27,9 +28,15 @@ void startTelnetServer(void);
 
 void readTelnetStream(void);
 
+void printConfigInfoToSerial();
+
 void handleSerialCommands(void);
 
 void handleBootButton(void);
+
+void populateCloudProps(void);
+
+String getFormattedTime();
 
 void saveNewNetwork(const char* ssid, const char* password);
 

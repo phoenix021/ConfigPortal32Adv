@@ -8,15 +8,21 @@ const char DEVICE_LOGIN_NAME[]  = "d6dbc4b1-e7aa-491b-98bb-a4212637d373";
 const char DEVICE_KEY[]  = "QnYR6H9O2R3a@vkY9DeFZIyem";    // Secret device password
 
 void onTriggerOtaUpdateChange();
+void onLastUpdatedChange();
+void onLastConnectedIpChange();
 
+String lastUpdated;
+String lastConnectedIp;
 bool triggerOtaUpdate;
 
 void initProperties(){
 
   ArduinoCloud.setBoardId(DEVICE_LOGIN_NAME);
   ArduinoCloud.setSecretDeviceKey(DEVICE_KEY);
+  ArduinoCloud.addProperty(lastUpdated, READWRITE, ON_CHANGE, onLastUpdatedChange);
+  ArduinoCloud.addProperty(lastConnectedIp, READWRITE, ON_CHANGE, onLastUpdatedChange);
   ArduinoCloud.addProperty(triggerOtaUpdate, READWRITE, ON_CHANGE, onTriggerOtaUpdateChange);
-
+  
 }
 
 WiFiConnectionHandler ArduinoIoTPreferredConnection;

@@ -13,6 +13,9 @@ U8G2_SH1106_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE);
 extern void format_config_json();
 bool connectToKnownNetworks(void);
 extern char cfgFile[];
+extern String lastUpdated;
+extern String lastConnectedIp;
+extern bool triggerOtaUpdate;
 
 static StaticJsonDocument<JSON_BUFFER_LENGTH>* cfgPtr = nullptr;
 
@@ -22,8 +25,25 @@ void setConfigReference(StaticJsonDocument<JSON_BUFFER_LENGTH>* externalCfg) {
   if (!(*cfgPtr).containsKey("savedNetworks") || !(*cfgPtr)["savedNetworks"].is<JsonArray>() ) {
     (*cfgPtr)["savedNetworks"] = JsonArray();
   }
+
+  if (!(*cfgPtr).containsKey("lastUpdated")) {
+    (*cfgPtr)["lastUpdated"] = "";
+  }
+
+  if (!(*cfgPtr)["lastConnectedIp"]) {
+    (*cfgPtr)["lastConnectedIp"] = "";
+  }
+
+  if (!(*cfgPtr)["triggerOtaUpdate"]) {
+    (*cfgPtr)["triggerOtaUpdate"] = false;
+  }
 }
 
+void populateCloudProps(){
+  lastUpdated = (String) (*cfgPtr)["lastUpdated"];
+  lastConnectedIp = (String) (*cfgPtr)["lastConnectedIp"];
+  triggerOtaUpdate = (String) (*cfgPtr)["triggerOtaUpdate"];
+}
 
 extern void configDevice();
 extern void doOTAUpdate();
@@ -34,9 +54,23 @@ void startTelnetServer(void){
   TelnetStream.begin();
 }
 
+
+String getFormattedTime() {
+  time_t now = time(nullptr);
+  struct tm timeinfo;
+  localtime_r(&now, &timeinfo);
+  
+  char buffer[30];
+  strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", &timeinfo);
+  return String(buffer);
+}
+
 HTTPClient http;
 
 void performHttpOTA(const char* bin_url) {
+  lastUpdated = "Update started at: " + getFormattedTime();
+  ArduinoCloud.update();
+  delay(2000);
 
   http.begin(bin_url);  // e.g., "http://your-server.com/firmware.bin"
   int httpCode = http.GET();
@@ -47,33 +81,59 @@ void performHttpOTA(const char* bin_url) {
 
     if (!Update.begin(len)) {
       Serial.println("Update failed to begin");
+      lastUpdated = "Update failed to begin at: " + getFormattedTime();
+      ArduinoCloud.update();
       return;
     }
 
     size_t written = Update.writeStream(*stream);
     if (written == len) {
       Serial.println("Update written successfully");
+      lastUpdated = "Update written successfully at: " + getFormattedTime();
+      ArduinoCloud.update();
     } else {
       Serial.printf("Only %d/%d bytes written\n", written, len);
     }
+    delay(500);
 
     if (Update.end()) {
       Serial.println("Update complete");
+      lastUpdated = "Update complete at: " + getFormattedTime();
+      (*cfgPtr)["lastUpdated"] = lastUpdated;
+      save_config_json();
+      delay(2000);
       if (Update.isFinished()) {
         Serial.println("Rebooting...");
+        lastUpdated = "Rebooting at: " + getFormattedTime();
+        otaRequested = false;
+        triggerOtaUpdate = false;
+        (*cfgPtr)["triggerOtaUpdate"] = triggerOtaUpdate;
+        save_config_json();
+        ArduinoCloud.update();
+        delay(5000);
         ESP.restart();
       } else {
         Serial.println("Update not finished?");
+        lastUpdated = "Update not finished at: " + getFormattedTime();
+        ArduinoCloud.update();
       }
     } else {
       Serial.printf("Update failed. Error #: %d\n", Update.getError());
+      lastUpdated = "Update failed at: " + getFormattedTime();
+      ArduinoCloud.update();
     }
   } else {
     Serial.printf("HTTP error: %d\n", httpCode);
+    lastUpdated = "HTTP error occured at: " + getFormattedTime();
+    ArduinoCloud.update();
   }
 
   http.end();
+  delay(1000);
   otaRequested = false;
+  triggerOtaUpdate = false;
+  ArduinoCloud.update();
+  save_config_json();
 }
 
 void readTelnetStream() {
@@ -229,6 +289,9 @@ bool wifiConnect(const char* ssid, const char* password, uint16_t timeoutMs = 10
     display_message_extended("WiFi connected", WiFi.SSID().c_str(), WiFi.localIP().toString().c_str(), 3000);
     // Update last connected SSID in config'
     (*cfgPtr)["lastConnectedSSID"] = ssid;
+    lastConnectedIp = WiFi.localIP().toString();
+    (*cfgPtr)["lastConnectedIp"] = lastConnectedIp;
+    ArduinoCloud.update();
     
     saveNewNetwork(ssid, password);
     save_config_json();
@@ -292,15 +355,24 @@ bool connectToKnownNetworks() {
 
     if (wifiConnect(ssid, password)) {
         Serial.println("Successfully connected.");
-        (*cfgPtr)["lastConnectedSSID"] = WiFi.SSID();;
+        (*cfgPtr)["lastConnectedSSID"] = WiFi.SSID();
+        lastConnectedIp = WiFi.localIP().toString();
+        (*cfgPtr)["lastConnectedIp"] = lastConnectedIp;
+        ArduinoCloud.update();
+        save_config_json();
         saveNewNetwork((*cfgPtr)["ssid"], (*cfgPtr)["w_pw"]);
         serializeJsonPretty((*cfgPtr), Serial);
+        loadConfigWithSavedNetworks();
         return true;
     } 
   }
   
   Serial.println("No known networks could be connected.");
   return false;
+}
+
+void printConfigInfoToSerial(){
+  serializeJsonPretty((*cfgPtr), Serial);
 }
 
 
@@ -342,7 +414,7 @@ void handleSerialCommands(){
     if (input == "eraseconfig") {
       format_config_json();
       Serial.println("Restarting...");
-      delay(1000);
+      delay(500);
       ESP.restart();
     }else if (input == "reboot") { 
        ESP.restart(); 
@@ -365,7 +437,7 @@ void handleBootButton() {
     display_message("BOOT button pressed", "Configure device", 2000);
     enter_config_mode();
 
-    bool connected = wifiConnect((*cfgPtr)["ssid"], (*cfgPtr)["w_pw"], 50000);
+    bool connected = wifiConnect((*cfgPtr)["ssid"], (*cfgPtr)["w_pw"], 5000);
     loadConfigWithSavedNetworks();
   }
 }
@@ -374,6 +446,21 @@ void setupScanRoute() {
   register_server_route("/scan");
 }
 
+/*
+  Since LastUpdated is READ_WRITE variable, onLastUpdatedChange() is
+  executed every time a new value is received from IoT Cloud.
+*/
+void onLastUpdatedChange()  {
+  
+}
+
+/*
+  Since LastUpdated is READ_WRITE variable, onLastUpdatedChange() is
+  executed every time a new value is received from IoT Cloud.
+*/
+void onLastConnectedIp()  {
+  
+}
 
 
 /*
@@ -381,13 +468,13 @@ void setupScanRoute() {
   executed every time a new value is received from IoT Cloud.
 */
 
-extern bool triggerOtaUpdate;
 void onTriggerOtaUpdateChange()  { 
  if (triggerOtaUpdate) {
     Serial.println("[Cloud OTA] Trigger received from Arduino IoT Cloud Dashboard");
 
     // Optional: debounce to avoid multiple triggers
     triggerOtaUpdate = false;
+    ArduinoCloud.update();
 
     // Start OTA update
     performHttpOTA("http://192.168.1.136:8083/ConfigPortal32Adv.ino.esp32.bin");

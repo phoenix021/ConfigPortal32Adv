@@ -118,6 +118,9 @@ void testLittleFS() {
 void setup() {
   Serial.begin(115200);
 
+  initProperties();
+  ArduinoCloud.begin(ArduinoIoTPreferredConnection);
+
   // set the pin mode through interface
   set_boot_pin_mode();
 
@@ -146,6 +149,11 @@ void setup() {
         display_message_extended("WiFi Failed", "No known networks available", "Please configure...", 2000);
         configDevice();  // fallback to AP config portal
         connected = wifiConnect(cfg["ssid"], cfg["w_pw"],50000);
+        if (connected){
+          lastConnectedIp = WiFi.localIP().toString();
+          cfg["lastConnectedIp"] = lastConnectedIp;
+          save_config_json();
+        }
         return;
       }
     }
@@ -160,9 +168,13 @@ void setup() {
 
   startTelnetServer();
   
-  initProperties();
-  ArduinoCloud.begin(ArduinoIoTPreferredConnection);
+
   setDebugMessageLevel(2);
+  populateCloudProps();
+  ArduinoCloud.update();
+
+
+  printConfigInfoToSerial();
 }
 
 void format_config_json() {
@@ -188,6 +200,7 @@ void loop() {
   handleBootButton();
 
   readTelnetStream();
-  
+
+  //populateCloudProps();
   ArduinoCloud.update();
 }
