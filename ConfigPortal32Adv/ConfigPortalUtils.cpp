@@ -15,6 +15,7 @@ bool connectToKnownNetworks(void);
 extern char cfgFile[];
 extern String lastUpdated;
 extern String lastConnectedIp;
+extern String lastConneectedSSID;
 extern bool triggerOtaUpdate;
 
 static StaticJsonDocument<JSON_BUFFER_LENGTH>* cfgPtr = nullptr;
@@ -83,6 +84,7 @@ void performHttpOTA(const char* bin_url) {
       Serial.println("Update failed to begin");
       lastUpdated = "Update failed to begin at: " + getFormattedTime();
       ArduinoCloud.update();
+      display_message("OTA update failed", "to begin", 2000);
       return;
     }
 
@@ -90,6 +92,7 @@ void performHttpOTA(const char* bin_url) {
     if (written == len) {
       Serial.println("Update written successfully");
       lastUpdated = "Update written successfully at: " + getFormattedTime();
+      display_message("OTA update", "written successfully", 2000);
       ArduinoCloud.update();
     } else {
       Serial.printf("Only %d/%d bytes written\n", written, len);
@@ -100,6 +103,8 @@ void performHttpOTA(const char* bin_url) {
       Serial.println("Update complete");
       lastUpdated = "Update complete at: " + getFormattedTime();
       (*cfgPtr)["lastUpdated"] = lastUpdated;
+      ArduinoCloud.update();
+      display_message("OTA update", "COMPLETE", 2000);
       save_config_json();
       delay(2000);
       if (Update.isFinished()) {
@@ -107,6 +112,7 @@ void performHttpOTA(const char* bin_url) {
         lastUpdated = "Rebooting at: " + getFormattedTime();
         otaRequested = false;
         triggerOtaUpdate = false;
+        display_message("]DEVICE", "REBOOTING...", 2000);
         (*cfgPtr)["triggerOtaUpdate"] = triggerOtaUpdate;
         save_config_json();
         ArduinoCloud.update();
@@ -120,11 +126,13 @@ void performHttpOTA(const char* bin_url) {
     } else {
       Serial.printf("Update failed. Error #: %d\n", Update.getError());
       lastUpdated = "Update failed at: " + getFormattedTime();
+      display_message("OTA update", "FAILED", 2000);
       ArduinoCloud.update();
     }
   } else {
     Serial.printf("HTTP error: %d\n", httpCode);
     lastUpdated = "HTTP error occured at: " + getFormattedTime();
+    display_message("OTA update", "HTTP error", 2000);
     ArduinoCloud.update();
   }
 
@@ -288,10 +296,13 @@ bool wifiConnect(const char* ssid, const char* password, uint16_t timeoutMs = 10
     Serial.printf("\nConnected to %s. IP address: %s\n", ssid, WiFi.localIP().toString().c_str());
     display_message_extended("WiFi connected", WiFi.SSID().c_str(), WiFi.localIP().toString().c_str(), 3000);
     // Update last connected SSID in config'
+    (*cfgPtr)["lastConnectedIp"] = WiFi.localIP().toString().c_str();
     (*cfgPtr)["lastConnectedSSID"] = ssid;
-    lastConnectedIp = WiFi.localIP().toString();
+    lastConnectedIp = "Connected on  " + (String)(*cfgPtr)["lastConnectedIp"] + " IP address";
     (*cfgPtr)["lastConnectedIp"] = lastConnectedIp;
+    lastConneectedSSID = "Connected to ssid: " + (String)(*cfgPtr)["lastConnectedSSID"];
     ArduinoCloud.update();
+    delay(500);
     
     saveNewNetwork(ssid, password);
     save_config_json();
@@ -446,6 +457,15 @@ void setupScanRoute() {
   register_server_route("/scan");
 }
 
+
+/*
+  Since LastConnectedIp is READ_WRITE variable, onLastConnectedIpChange() is
+  executed every time a new value is received from IoT Cloud.
+*/
+void onLastConnectedIpChange()  {
+  // Add your code here to act upon LastConnectedIp change
+}
+
 /*
   Since LastUpdated is READ_WRITE variable, onLastUpdatedChange() is
   executed every time a new value is received from IoT Cloud.
@@ -458,7 +478,7 @@ void onLastUpdatedChange()  {
   Since LastUpdated is READ_WRITE variable, onLastUpdatedChange() is
   executed every time a new value is received from IoT Cloud.
 */
-void onLastConnectedIp()  {
+void onLastConneectedSSIDChange()  {
   
 }
 
@@ -476,6 +496,7 @@ void onTriggerOtaUpdateChange()  {
     triggerOtaUpdate = false;
     ArduinoCloud.update();
 
+    display_message("OTA update triggered", "from server", 2000);
     // Start OTA update
     performHttpOTA("http://192.168.1.136:8083/ConfigPortal32Adv.ino.esp32.bin");
   }
